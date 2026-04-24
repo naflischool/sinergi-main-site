@@ -33,7 +33,7 @@ nav.scrolled{background:rgba(10,15,30,.94);backdrop-filter:blur(14px);box-shadow
 /* HERO */
 .hero{min-height:100vh;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:5rem 1.5rem 5rem;overflow:hidden;gap:0}
 .hero-bg{position:absolute;inset:0;z-index:0}
-.hero-bg-img{position:absolute;inset:0;background-size:cover;background-position:center}
+.hero-bg-img{width: 100%; height: 100%; position:absolute;inset:0;background-size:cover;background-position:center}
 .hero-bg-ov{position:absolute;inset:0;background:linear-gradient(160deg,rgba(10,15,30,.9) 0%,rgba(15,31,92,.8) 45%,rgba(29,78,216,.4) 100%)}
 .hero-bg-slice{position:absolute;bottom:-2px;left:-5%;width:110%;height:160px;background:var(--off);clip-path:polygon(0 65%,100% 0%,100% 100%,0 100%)}
 
@@ -450,7 +450,7 @@ window.addEventListener('scroll',()=>$('nav').classList.toggle('scrolled',scroll
 /* ── HERO ── */
 $('heroBg').style.backgroundImage=`url('${D.foto.heroBg}')`;
 $('heroLogo').innerHTML=D.foto.logo?`<img src="${D.foto.logo}" alt="${D.sekolah.nama}">`:`${logoSVG(38)}`;
-$('hEye').textContent='Yayasan '+D.sekolah.nama;
+$('hEye').textContent=D.sekolah.nama;
 $('hTitle').innerHTML=`Inspiring with <span class="ay">Values</span>,<br>Leading with <span class="aline">Purposes</span>`;
 $('hSub').textContent=D.sekolah.taglineExt;
 $('btnOT').href=D.cta.orangTuaUrl; $('btnOTLabel').textContent=D.cta.orangTuaLabel;
