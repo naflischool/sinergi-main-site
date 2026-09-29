@@ -39,9 +39,12 @@ button:active{transform:scale(.96);}
 button.secondary{background:var(--panel); color:var(--text); border:1px solid var(--muted);}
 button.pink{background:var(--accent2); color:#2a0a1a;}
 .modes{display:flex; justify-content:center; gap:10px; flex-wrap:wrap;}
+.modes button[aria-pressed="true"]{background:var(--accent); color:#04231d; border-color:var(--accent);}
 .settings{display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin:16px 0;}
 .settings label{display:flex; align-items:center; gap:8px; color:var(--text); font-size:.9rem;}
 .settings select{font:inherit; padding:8px 10px; border:1px solid var(--muted); border-radius:8px; background:var(--bg); color:var(--text);}
+.fixed-position-setting{display:flex;align-items:flex-start;justify-content:center;gap:8px;margin:12px 0;color:var(--text);font-size:.85rem;line-height:1.4;}
+.fixed-position-setting input{margin:2px 0 0;accent-color:var(--accent);}
 #stage{
   position:relative; width:100%; max-width:900px; aspect-ratio:4/3;
   background:#000; border-radius:16px; overflow:hidden; display:none;
@@ -69,10 +72,27 @@ canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
   padding:6px 10px; font-size:.8rem; color:var(--muted);
 }
 #controls-bar input[type=range]{flex:1; accent-color:var(--accent2);}
+#setup-bar{
+  width:100%; max-width:900px; display:none; align-items:center; justify-content:center;
+  flex-wrap:wrap; gap:8px 14px; padding:10px; color:var(--text);
+  background:var(--panel); border-radius:10px; margin-bottom:8px;
+}
+#setup-bar label{display:flex; align-items:center; gap:7px; font-size:.8rem;}
+#setup-bar input[type=range]{width:100px; accent-color:var(--accent);}
+#setup-position-settings{display:contents;}
+#setup-position-settings[hidden]{display:none;}
+#btn-start{margin:0; padding:9px 18px;}
 #btn-recalib{
   font-size:.75rem; padding:6px 10px; margin:0; background:var(--panel);
   color:var(--text); border:1px solid var(--muted); pointer-events:auto;
 }
+#btn-fullscreen{
+  position:absolute; right:12px; bottom:12px; z-index:30; width:44px; height:44px;
+  padding:0; margin:0; border:1px solid rgba(255,255,255,.7); border-radius:50%;
+  background:rgba(11,15,26,.78); color:#fff; font-size:1.25rem;
+}
+#stage:fullscreen{width:min(100vw,133.333dvh);height:min(100dvh,75vw);max-width:none;aspect-ratio:4/3;margin:auto;border-radius:0;}
+#stage:-webkit-full-screen{width:min(100vw,133.333vh);height:min(100vh,75vw);max-width:none;aspect-ratio:4/3;margin:auto;border-radius:0;}
 .score-popup{
   position:absolute; font-weight:900; font-size:2.2rem; pointer-events:none;
   text-shadow:0 2px 10px rgba(0,0,0,.7); z-index:25; white-space:nowrap;
@@ -97,8 +117,8 @@ canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
 <div class="card" id="start-screen">
   <p>Bentuk tubuhmu agar pas masuk ke lubang sebelum "dinding" datang! Pilih mode pemain, lalu kalibrasi kamera di ruangan kosong (tanpa orang) sebelum mulai.</p>
   <div class="modes">
-    <button id="mode1" class="secondary">👤 1 Pemain</button>
-    <button id="mode2" class="secondary">👥 2 Pemain</button>
+    <button id="mode1" class="secondary" type="button" aria-pressed="true">👤 1 Pemain</button>
+    <button id="mode2" class="secondary" type="button" aria-pressed="false">👥 2 Pemain</button>
   </div>
   <p id="mode-label" style="color:var(--accent); font-weight:600;"></p>
   <div class="settings">
@@ -118,6 +138,10 @@ canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
       </select>
     </label>
   </div>
+  <label class="fixed-position-setting"><input id="lock-y-scale" type="checkbox">
+    <span>Mode posisi jarak tidak berubah</span>
+  </label>
+  <!-- <p><a href="pose-editor.html" style="color:var(--accent);">Buka Editor Pose</a></p> -->
   <p style="font-size:.8rem;">Area biru muda = bagian tubuhmu yang terdeteksi kamera (bayangan). Lubang berbentuk siluet orang dengan berbagai pose — posisikan bayanganmu supaya pas masuk!</p>
   <button id="btn-calib" disabled>Aktifkan Kamera</button>
 </div>
@@ -134,12 +158,22 @@ canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
   <input type="range" id="darkness" min="0" max="90" value="45">
 </div>
 
+<div id="setup-bar">
+  <label for="setup-scale">Skala <input id="setup-scale" type="range" min="0.6" max="1.4" step="0.05" value="1"><output id="scale-value">100%</output></label>
+  <div id="setup-position-settings" hidden>
+    <label for="setup-x">Posisi X <input id="setup-x" type="range" min="-100" max="100" step="5" value="0"><output id="x-value">0</output></label>
+    <label for="setup-y">Posisi Y <input id="setup-y" type="range" min="-100" max="100" step="5" value="0"><output id="y-value">0</output></label>
+  </div>
+  <button id="btn-start" type="button">Mulai</button>
+</div>
+
 <div id="stage">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
   <div id="hud"></div>
   <div id="countdown"></div>
   <div id="result-banner"></div>
+  <button id="btn-fullscreen" type="button" aria-label="Masuk layar penuh" title="Layar penuh">⛶</button>
 </div>
 
 <div class="card hidden" id="end-screen">
@@ -165,13 +199,17 @@ let W = 640, H = 480;
 const SCALE_DOWN = 4;
 let PW = W/SCALE_DOWN, PH = H/SCALE_DOWN; // low-res processing size
 let bgGraySmall = null;
+let fgMaskSmall = null;
 let offCanvas = document.createElement('canvas'); // full-res mirrored capture
 let offCtx = offCanvas.getContext('2d');
 let offCanvasSmall = document.createElement('canvas'); // low-res mirrored capture
-let offCtxSmall = offCanvasSmall.getContext('2d');
+let offCtxSmall = offCanvasSmall.getContext('2d',{willReadFrequently:true});
 let round = 0;
 let maxRounds = 6;
 let countdownSeconds = 3;
+let previewBaseHoles = {};
+let setupX = 0, setupY = 0, setupScale = 1;
+let lockYAndScale = false;
 let score = {1:0, 2:0};
 let stream = null;
 let raf = null;
@@ -191,6 +229,32 @@ document.getElementById('btn-calib').onclick = initCamera;
 document.getElementById('btn-do-calib').onclick = calibrate;
 document.getElementById('btn-restart').onclick = () => location.reload();
 document.getElementById('btn-recalib').onclick = requestRecalibration;
+document.getElementById('btn-start').onclick = () => {
+  previewBaseHoles = Object.fromEntries(Object.entries(holes).map(([player,hole])=>[player,{...hole}]));
+  startGame();
+};
+document.getElementById('setup-scale').addEventListener('input', e => {
+  setupScale = parseFloat(e.target.value);
+  document.getElementById('scale-value').value = `${Math.round(setupScale*100)}%`;
+  updateSetupHoles();
+});
+document.getElementById('setup-x').addEventListener('input', e => {
+  setupX = parseInt(e.target.value, 10);
+  document.getElementById('x-value').value = setupX;
+  updateSetupHoles();
+});
+document.getElementById('setup-y').addEventListener('input', e => {
+  setupY = parseInt(e.target.value, 10);
+  document.getElementById('y-value').value = setupY;
+  updateSetupHoles();
+});
+document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', updateFullscreenButton);
+document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+document.getElementById('lock-y-scale').addEventListener('change', e => {
+  lockYAndScale = e.target.checked;
+  document.getElementById('setup-position-settings').hidden = !lockYAndScale;
+});
 document.getElementById('round-count').addEventListener('change', e => {
   maxRounds = parseInt(e.target.value, 10);
 });
@@ -203,8 +267,8 @@ document.getElementById('darkness').addEventListener('input', e => {
 
 function setMode(m){
   mode = m;
-  document.getElementById('mode1').style.background = m===1 ? 'var(--accent)':'';
-  document.getElementById('mode2').style.background = m===2 ? 'var(--accent)':'';
+  document.getElementById('mode1').setAttribute('aria-pressed', String(m===1));
+  document.getElementById('mode2').setAttribute('aria-pressed', String(m===2));
   document.getElementById('mode-label').textContent = m===1 ? 'Mode: 1 Pemain' : 'Mode: 2 Pemain (berdiri sisi kiri & kanan)';
   document.getElementById('btn-calib').disabled = false;
 }
@@ -253,6 +317,7 @@ function requestRecalibration(){
   resultBanner.textContent = '';
   stage.style.display = 'none';
   controlsBar.style.display = 'none';
+  document.getElementById('setup-bar').style.display = 'none';
   document.getElementById('calib-status').textContent = '';
   calibScreen.classList.remove('hidden');
 }
@@ -266,30 +331,47 @@ function calibrate(){
     return; // jangan simpan data yang salah/kosong
   }
   bgGraySmall = fresh;
+  fgMaskSmall = new Uint8Array(PW*PH);
   document.getElementById('calib-status').textContent = 'Kalibrasi berhasil!';
   setTimeout(()=>{
     calibScreen.classList.add('hidden');
     stage.style.display = 'block';
-    controlsBar.style.display = 'flex';
     if(isRecalibrating){
       // lanjutkan permainan dari ronde yang sama, skor tetap tersimpan
       isRecalibrating = false;
       round = savedPhaseBeforeRecalib.round;
       score = savedPhaseBeforeRecalib.score;
       round--; // nextRound() akan menaikkan lagi
+      document.getElementById('setup-bar').style.display = 'none';
+      controlsBar.style.display = 'flex';
       nextRound();
       raf = requestAnimationFrame(loop);
     } else {
-      startGame();
+      setupX = 0; setupY = 0; setupScale = 1;
+      document.getElementById('setup-x').value = '0';
+      document.getElementById('setup-y').value = '0';
+      document.getElementById('setup-scale').value = '1';
+      document.getElementById('x-value').value = '0';
+      document.getElementById('y-value').value = '0';
+      document.getElementById('scale-value').value = '100%';
+      phase = 'setup';
+      holes = createRoundHoles(240,false);
+      previewBaseHoles = Object.fromEntries(Object.entries(holes).map(([player,hole])=>[player,{...hole}]));
+      updateSetupHoles();
+      controlsBar.style.display = 'none';
+      document.getElementById('setup-bar').style.display = 'flex';
+      raf = requestAnimationFrame(loop);
     }
   }, 600);
 }
 
 function computeForegroundSmall(){
   const gray = grabGraySmall();
-  const fg = new Uint8Array(PW*PH);
+  if(!fgMaskSmall || fgMaskSmall.length!==gray.length) fgMaskSmall = new Uint8Array(gray.length);
+  const fg = fgMaskSmall;
   for(let i=0;i<gray.length;i++){
-    fg[i] = Math.abs(gray[i]-bgGraySmall[i]) > 38 ? 1 : 0;
+    const difference=Math.abs(gray[i]-bgGraySmall[i]);
+    fg[i] = difference>(fg[i] ? 36 : 40) ? 1 : 0;
   }
   return fg;
 }
@@ -298,13 +380,13 @@ function computeForegroundSmall(){
 // each pose: head circle + limbs as capsules (line segment + radius)
 const POSES = [
   { // bintang / star jump
-    head:{x:0,y:-95,r:30},
+    head:{x:-1.4,y:-106.3,r:30},
     limbs:[
-      {x1:0,y1:-72,x2:0,y2:12,r:18},     // torso
-      {x1:0,y1:-60,x2:-62,y2:-95,r:11},  // lengan kiri
-      {x1:0,y1:-60,x2:62,y2:-95,r:11},   // lengan kanan
-      {x1:0,y1:12,x2:-55,y2:92,r:14},    // kaki kiri
-      {x1:0,y1:12,x2:55,y2:92,r:14},     // kaki kanan
+    {x1:0,y1:-72,x2:0,y2:12,r:18},
+    {x1:0,y1:-60,x2:-62,y2:-95,r:11},
+    {x1:0,y1:-60,x2:62,y2:-95,r:11},
+    {x1:0,y1:12,x2:-55,y2:92,r:14},
+    {x1:0,y1:12,x2:55,y2:92,r:14},
     ]
   },
   { // huruf T
@@ -328,63 +410,63 @@ const POSES = [
     ]
   },
   { // kaki-tangan lebar, gaya victory
-    head:{x:0,y:-90,r:30},
+    head:{x:-0.6,y:-119.6,r:32},
     limbs:[
-      {x1:0,y1:-74,x2:0,y2:10,r:18},
-      {x1:0,y1:-60,x2:-48,y2:-105,r:11},
-      {x1:0,y1:-60,x2:48,y2:-105,r:11},
-      {x1:0,y1:10,x2:-62,y2:88,r:15},
-      {x1:0,y1:10,x2:62,y2:88,r:15},
+    {x1:0,y1:-74,x2:0,y2:10,r:18},
+    {x1:0,y1:-60,x2:-48,y2:-105,r:11},
+    {x1:0,y1:-60,x2:48,y2:-105,r:11},
+    {x1:0,y1:10,x2:-62,y2:88,r:15},
+    {x1:0,y1:10,x2:62,y2:88,r:15},
     ]
   },
   { // jongkok
-    head:{x:0,y:-48,r:24},
+    head:{x:-8.1,y:-55.2,r:30},
     limbs:[
-      {x1:0,y1:-24,x2:2,y2:18,r:17},
-      {x1:0,y1:-16,x2:-34,y2:2,r:9},
-      {x1:2,y1:-16,x2:36,y2:2,r:9},
-      {x1:2,y1:18,x2:-34,y2:40,r:14},
-      {x1:-34,y1:40,x2:-42,y2:70,r:13},
-      {x1:2,y1:18,x2:36,y2:40,r:14},
-      {x1:36,y1:40,x2:42,y2:70,r:13},
+    {x1:0,y1:-24,x2:2,y2:18,r:17},
+    {x1:0,y1:-16,x2:-36.9,y2:4,r:9},
+    {x1:2,y1:-16,x2:46,y2:-26.4,r:9},
+    {x1:2,y1:18,x2:-34,y2:40,r:14},
+    {x1:-34,y1:40,x2:-18.4,y2:58.1,r:13},
+    {x1:2,y1:18,x2:40.8,y2:28.4,r:14},
+    {x1:40.1,y1:26.2,x2:36.4,y2:66.2,r:13},
     ]
   },
   { // duduk menyamping
-    head:{x:-20,y:-70,r:24},
+    head:{x:-10.3,y:-76,r:24},
     limbs:[
-      {x1:-12,y1:-46,x2:8,y2:8,r:16},
-      {x1:-5,y1:-28,x2:25,y2:-8,r:9},
-      {x1:2,y1:-25,x2:30,y2:-12,r:8},
-      {x1:8,y1:8,x2:42,y2:26,r:13},
-      {x1:42,y1:26,x2:68,y2:24,r:12},
-      {x1:8,y1:8,x2:38,y2:48,r:13},
-      {x1:38,y1:48,x2:70,y2:50,r:12},
+    {x1:-12,y1:-46,x2:-13.2,y2:12.1,r:16},
+    {x1:-5,y1:-28,x2:36.4,y2:-44.1,r:9},
+    {x1:2,y1:-25,x2:43,y2:-39.7,r:8},
+    {x1:-10.3,y1:15.8,x2:45.3,y2:18.1,r:13},
+    {x1:43,y1:15.8,x2:69.7,y2:17.3,r:12},
+    {x1:-16.2,y1:18.8,x2:49.7,y2:19.6,r:13},
+    {x1:35.6,y1:20.3,x2:75.6,y2:23.3,r:12},
     ]
   },
   { // berdiri menyamping
-    head:{x:5,y:-88,r:25},
+    head:{x:0.1,y:-98.2,r:25},
     limbs:[
-      {x1:0,y1:-63,x2:8,y2:15,r:15},
-      {x1:1,y1:-46,x2:-19,y2:-16,r:8},
-      {x1:7,y1:-45,x2:20,y2:-13,r:8},
-      {x1:8,y1:15,x2:-10,y2:58,r:12},
-      {x1:-10,y1:58,x2:-12,y2:99,r:11},
-      {x1:8,y1:15,x2:27,y2:58,r:12},
-      {x1:27,y1:58,x2:23,y2:99,r:11},
+    {x1:0,y1:-63,x2:3.1,y2:12.9,r:15},
+    {x1:8.2,y1:-58.2,x2:70.4,y2:-44.9,r:8},
+    {x1:9.7,y1:-58.2,x2:54.1,y2:-21.2,r:8},
+    {x1:2.3,y1:15.8,x2:-0.6,y2:58.1,r:12},
+    {x1:-2.1,y1:60.3,x2:-4.3,y2:102.5,r:11},
+    {x1:8,y1:15,x2:15.6,y2:55.1,r:12},
+    {x1:16.4,y1:58.1,x2:18.6,y2:101.7,r:11},
     ]
   },
   { // berbaring menyamping
-    head:{x:-84,y:-5,r:24},
+    head:{x:-73.2,y:-8.6,r:28},
     limbs:[
-      {x1:-60,y1:-5,x2:17,y2:-5,r:16},
-      {x1:-30,y1:-5,x2:-12,y2:-34,r:9},
-      {x1:-12,y1:-34,x2:20,y2:-30,r:8},
-      {x1:-25,y1:0,x2:-30,y2:22,r:8},
-      {x1:-30,y1:22,x2:5,y2:25,r:8},
-      {x1:17,y1:-5,x2:49,y2:-28,r:13},
-      {x1:49,y1:-28,x2:83,y2:-23,r:12},
-      {x1:17,y1:-5,x2:50,y2:20,r:13},
-      {x1:50,y1:20,x2:85,y2:27,r:12},
+    {x1:-45.1,y1:-6.4,x2:17,y2:-5,r:16},
+    {x1:-30,y1:-5,x2:-12,y2:-34,r:9},
+    {x1:-12,y1:-34,x2:20,y2:-30,r:8},
+    {x1:-25,y1:0,x2:-30,y2:22,r:8},
+    {x1:-30,y1:22,x2:5,y2:25,r:8},
+    {x1:17,y1:-5,x2:52.7,y2:-16.7,r:13},
+    {x1:53.4,y1:-19.7,x2:83,y2:-23,r:12},
+    {x1:17,y1:-5,x2:55.6,y2:6.2,r:13},
+    {x1:57.1,y1:7,x2:88.9,y2:7,r:12},
     ]
   },
 ];
@@ -454,6 +536,7 @@ function newHole(zoneX0, zoneX1, targetHeightPx){
 }
 
 function startGame(){
+  document.getElementById('setup-bar').style.display = 'none';
   round = 0;
   score = {1:0,2:0};
   controlsBar.style.display = 'flex';
@@ -465,14 +548,78 @@ function nextRound(){
   round++;
   if(round > maxRounds){ endGame(); return; }
   const targetH = Math.max(170, 320 - round*22);
-  if(mode===1){
-    holes = {1: newHole(0, W, targetH)};
-  } else {
-    holes = {1: newHole(0, W/2, targetH*0.85), 2: newHole(W/2, W, targetH*0.85)};
-  }
+  holes = createRoundHoles(targetH);
   phase = 'countdown';
   phaseStart = performance.now();
   resultBanner.textContent = '';
+}
+
+function createRoundHoles(targetHeight,useLockedSetup=lockYAndScale){
+  const zones=mode===1 ? [[1,0,W]] : [[1,0,W/2],[2,W/2,W]];
+  if(!useLockedSetup){
+    return Object.fromEntries(zones.map(([player,x0,x1])=>[
+      player,newHole(x0,x1,mode===1 ? targetHeight : targetHeight*0.85)
+    ]));
+  }
+  return Object.fromEntries(zones.map(([player,x0,x1])=>{
+    const setup=previewBaseHoles[player];
+    const scale=setup.scale;
+    const compatiblePoses=POSES.filter(pose=>{
+      const bounds=getPoseBounds(pose);
+      const minY=15-bounds.minY*scale;
+      const maxY=H-15-bounds.maxY*scale;
+      return bounds.width*scale<=x1-x0-30 && setup.cy>=minY && setup.cy<=maxY;
+    });
+    const pose=compatiblePoses.length
+      ? compatiblePoses[Math.floor(Math.random()*compatiblePoses.length)]
+      : setup.pose;
+    const bounds=getPoseBounds(pose);
+    const minX=x0+15-bounds.minX*scale;
+    const maxX=x1-15-bounds.maxX*scale;
+    const cx=minX+Math.random()*Math.max(0,maxX-minX);
+    return [player,{pose,cx,cy:setup.cy,scale}];
+  }));
+}
+
+function updateSetupHoles(){
+  if(phase!=='setup') return;
+  for(const [player,baseHole] of Object.entries(previewBaseHoles)){
+    const zoneX0=mode===1 ? 0 : (Number(player)-1)*W/2;
+    const zoneX1=mode===1 ? W : Number(player)*W/2;
+    const bounds=getPoseBounds(baseHole.pose);
+    const scale=Math.min(baseHole.scale*setupScale,(zoneX1-zoneX0-30)/bounds.width,(H-30)/bounds.height);
+    const minX=zoneX0+15-bounds.minX*scale;
+    const maxX=zoneX1-15-bounds.maxX*scale;
+    const minY=15-bounds.minY*scale;
+    const maxY=H-15-bounds.maxY*scale;
+    holes[player]={...baseHole,scale,
+      cx:Math.max(minX,Math.min(maxX,baseHole.cx+setupX)),
+      cy:Math.max(minY,Math.min(maxY,baseHole.cy+setupY))};
+  }
+}
+
+function isFullscreen(){return Boolean(document.fullscreenElement||document.webkitFullscreenElement);}
+
+function updateFullscreenButton(){
+  const button=document.getElementById('btn-fullscreen');
+  const fullscreen=isFullscreen();
+  button.setAttribute('aria-label',fullscreen?'Keluar dari layar penuh':'Masuk layar penuh');
+  button.title=fullscreen?'Keluar dari layar penuh':'Layar penuh';
+}
+
+async function toggleFullscreen(){
+  try{
+    if(isFullscreen()){
+      if(document.exitFullscreen) await document.exitFullscreen();
+      else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }else if(stage.requestFullscreen){
+      await stage.requestFullscreen();
+    }else if(stage.webkitRequestFullscreen){
+      stage.webkitRequestFullscreen();
+    }
+  }catch(error){
+    alert('Layar penuh tidak tersedia di browser ini.');
+  }
 }
 
 function drawZoneDivider(){
@@ -555,6 +702,18 @@ function loop(ts){
 
   let t = performance.now() - phaseStart;
 
+  if(phase==='setup'){
+    ctx.fillStyle='rgba(94,234,212,.8)';
+    ctx.strokeStyle='rgba(94,234,212,.8)';
+    for(const hole of Object.values(holes)){
+      drawHolePath(ctx,hole);
+      ctx.fill();
+    }
+    drawZoneDivider();
+    hud.innerHTML='<span>Atur pose di kamera, lalu tekan Mulai</span>';
+    return;
+  }
+
   if(phase==='countdown'){
     const n = countdownSeconds - Math.floor(t/1000);
     countdownEl.textContent = n>0 ? n : 'MULAI!';
@@ -625,6 +784,7 @@ function endGame(){
   if(stream) stream.getTracks().forEach(tr=>tr.stop());
   stage.style.display='none';
   controlsBar.style.display='none';
+  document.getElementById('setup-bar').style.display='none';
   endScreen.classList.remove('hidden');
   const list = document.getElementById('final-scores');
   const maxTotal = maxRounds*100;
