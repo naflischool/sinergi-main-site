@@ -32,11 +32,14 @@ h1{margin:0;font-size:clamp(1.8rem,4vw,2.6rem);line-height:1.05;}
 .source-body{padding:14px;}
 textarea{display:block;width:100%;resize:vertical;border:1px solid #36524c;border-radius:4px;background:var(--deep);color:#e7fff7;padding:13px;font: .8rem/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2;}
 #pose-input{min-height:215px;}
+#reference-input{min-height:160px;}
 button{min-height:40px;border:0;border-radius:4px;padding:0 14px;font:inherit;font-size:.84rem;font-weight:750;cursor:pointer;}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--coral);outline-offset:2px;}
 .primary{background:var(--forest);color:#fff;}
 .secondary{background:#e3eee9;color:var(--forest);}
 .source-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;}
+.reference-actions{flex-wrap:wrap;}
+.reference-actions #reference-status{flex:1 1 100%;}
 #status{min-height:1.2em;color:var(--muted);font-size:.78rem;}
 #status[data-error="true"]{color:#b63b2a;}
 .fields-body{padding:14px;}
@@ -60,6 +63,11 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{
 canvas{display:block;width:100%;height:auto;aspect-ratio:4/3;touch-action:none;cursor:grab;}
 canvas.dragging{cursor:grabbing;}
 .preview-footer{display:flex;justify-content:space-between;gap:10px;padding-top:11px;color:var(--muted);font-size:.75rem;}
+.preview-legend{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.preview-legend span{display:inline-flex;align-items:center;gap:5px;}
+.legend-swatch{width:10px;height:10px;border-radius:50%;display:inline-block;}
+.legend-active{background:#8be0ca;}
+.legend-reference{background:#ed7059;}
 .output-body{padding:14px;}
 #pose-output{min-height:210px;resize:vertical;}
 .output-actions{display:flex;justify-content:flex-end;margin-top:10px;}
@@ -98,6 +106,17 @@ canvas.dragging{cursor:grabbing;}
           </div>
         </div>
       </section>
+      <section class="panel" aria-labelledby="reference-title">
+        <div class="panel-heading"><h2 id="reference-title">Pose referensi</h2><span>Tidak ikut diedit</span></div>
+        <div class="source-body">
+          <textarea id="reference-input" spellcheck="false" aria-label="Data pose referensi" placeholder="Tempel objek pose pembanding di sini"></textarea>
+          <div class="source-actions reference-actions">
+            <span id="reference-status" role="status" aria-live="polite">Referensi belum dimuat</span>
+            <button class="secondary" id="clear-reference" type="button">Hapus referensi</button>
+            <button class="primary" id="load-reference" type="button">Muat referensi</button>
+          </div>
+        </div>
+      </section>
       <section class="panel" aria-labelledby="fields-title">
         <div class="panel-heading"><h2 id="fields-title">Koordinat dan ukuran</h2><span>Nilai diperbarui langsung</span></div>
         <div class="fields-body" id="pose-fields"><div class="field-section"><span id="empty-state">Muat data pose untuk mulai mengedit.</span></div></div>
@@ -119,7 +138,10 @@ canvas.dragging{cursor:grabbing;}
         </div>
         <div class="preview-body">
           <div class="canvas-wrap"><canvas id="pose-canvas" width="800" height="600" aria-label="Preview pose yang dapat diedit dengan drag"></canvas></div>
-          <div class="preview-footer"><span>Tarik titik untuk mengubah koordinat</span><span id="limb-count">0 anggota</span></div>
+          <div class="preview-footer">
+            <div class="preview-legend"><span><i class="legend-swatch legend-active"></i>Pose aktif</span><span><i class="legend-swatch legend-reference"></i>Referensi</span></div>
+            <span id="limb-count">0 anggota</span>
+          </div>
         </div>
       </section>
       <section class="panel" aria-labelledby="output-title">
@@ -134,6 +156,7 @@ canvas.dragging{cursor:grabbing;}
 </main>
 <script>
 const input = document.getElementById('pose-input');
+const referenceInput = document.getElementById('reference-input');
 const output = document.getElementById('pose-output');
 const canvas = document.getElementById('pose-canvas');
 const ctx = canvas.getContext('2d');
@@ -141,6 +164,8 @@ const fields = document.getElementById('pose-fields');
 const status = document.getElementById('status');
 let pose = null;
 let poseName = 'pose baru';
+let referencePose = null;
+let referenceName = '';
 let activeDrag = null;
 let view = null;
 let zoom = 1;
@@ -368,14 +393,34 @@ function drawPose(){
   for(let y=0;y<=canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
   if(!pose) return;
   view=canvasTransform();
+  if(referencePose) drawSilhouette(referencePose,'#ed7059',0.5);
+  drawSilhouette(pose,'#8be0ca',1);
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle='#f7fff9';
+  ctx.strokeStyle='#175747';
+  ctx.lineWidth=2;
+  for(const limb of pose.limbs){
+    for(const [x,y] of [[limb.x1,limb.y1],[limb.x2,limb.y2]]){
+      const point=screenPoint(x,y,view);
+      ctx.beginPath();ctx.arc(point.x,point.y,5,0,Math.PI*2);ctx.fill();ctx.stroke();
+    }
+  }
+  const headPoint=screenPoint(pose.head.x,pose.head.y,view);
+  ctx.beginPath();ctx.arc(headPoint.x,headPoint.y,7,0,Math.PI*2);ctx.stroke();
+  ctx.restore();
+}
+
+function drawSilhouette(shape,color,opacity){
   ctx.save();
   ctx.translate(view.cx,view.cy);
   ctx.scale(view.scale,view.scale);
   ctx.lineCap='round';
   ctx.lineJoin='round';
-  ctx.strokeStyle='#8be0ca';
-  ctx.fillStyle='#8be0ca';
-  for(const limb of pose.limbs){
+  ctx.globalAlpha=opacity;
+  ctx.strokeStyle=color;
+  ctx.fillStyle=color;
+  for(const limb of shape.limbs){
     ctx.lineWidth=limb.r*2;
     ctx.beginPath();
     ctx.moveTo(limb.x1,limb.y1);
@@ -383,21 +428,8 @@ function drawPose(){
     ctx.stroke();
   }
   ctx.beginPath();
-  ctx.arc(pose.head.x,pose.head.y,pose.head.r,0,Math.PI*2);
+  ctx.arc(shape.head.x,shape.head.y,shape.head.r,0,Math.PI*2);
   ctx.fill();
-  ctx.restore();
-  ctx.save();
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.fillStyle='#ed7059';
-  for(const limb of pose.limbs){
-    for(const [x,y] of [[limb.x1,limb.y1],[limb.x2,limb.y2]]){
-      const point=screenPoint(x,y,view);
-      ctx.beginPath();ctx.arc(point.x,point.y,5,0,Math.PI*2);ctx.fill();
-    }
-  }
-  const headPoint=screenPoint(pose.head.x,pose.head.y,view);
-  ctx.strokeStyle='#f7fff9';ctx.lineWidth=2;
-  ctx.beginPath();ctx.arc(headPoint.x,headPoint.y,7,0,Math.PI*2);ctx.stroke();
   ctx.restore();
 }
 
@@ -421,6 +453,27 @@ function loadPose(){
   }catch(error){
     setStatus(error.message,true);
   }
+}
+
+function loadReference(){
+  const referenceStatus=document.getElementById('reference-status');
+  try{
+    const parsed=parsePose(referenceInput.value);
+    referencePose=parsed.pose;
+    referenceName=parsed.name;
+    referenceStatus.textContent=`Referensi dimuat: ${referenceName}`;
+    drawPose();
+  }catch(error){
+    referenceStatus.textContent=error.message;
+  }
+}
+
+function clearReference(){
+  referencePose=null;
+  referenceName='';
+  referenceInput.value='';
+  document.getElementById('reference-status').textContent='Referensi belum dimuat';
+  drawPose();
 }
 
 function pointerPosition(event){
@@ -472,6 +525,8 @@ document.getElementById('zoom-out').addEventListener('click',()=>changeZoom(zoom
 document.getElementById('zoom-in').addEventListener('click',()=>changeZoom(zoom+0.25));
 document.getElementById('zoom-reset').addEventListener('click',()=>changeZoom(1));
 document.getElementById('load-pose').addEventListener('click',loadPose);
+document.getElementById('load-reference').addEventListener('click',loadReference);
+document.getElementById('clear-reference').addEventListener('click',clearReference);
 document.getElementById('copy-pose').addEventListener('click',async()=>{
   if(!pose) return;
   try{
