@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor Pose | Hole in the Wall</title>
+<style>
+:root{
+  color-scheme:light;
+  --paper:#eef1ec; --panel:#fff; --ink:#172522; --muted:#687772;
+  --line:#d6dfd9; --forest:#175747; --mint:#8be0ca; --coral:#ed7059;
+  --deep:#102c27; --canvas:#10211f;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;}
+header{min-height:68px;padding:12px max(20px,calc((100vw - 1320px)/2));display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:var(--paper);}
+.brand{display:flex;align-items:center;gap:10px;color:var(--ink);font-size:.85rem;font-weight:800;letter-spacing:.08em;text-decoration:none;text-transform:uppercase;}
+.brand-mark{width:28px;height:28px;border:2px solid var(--forest);border-radius:50%;position:relative;}
+.brand-mark::after{content:"";position:absolute;width:8px;height:8px;background:var(--coral);border-radius:50%;top:8px;left:8px;}
+.back-link{color:var(--forest);font-size:.88rem;font-weight:700;text-decoration:none;}
+main{max-width:1320px;margin:0 auto;padding:34px 20px 48px;}
+.page-heading{display:flex;align-items:end;justify-content:space-between;gap:20px;margin-bottom:24px;}
+.eyebrow{margin:0 0 7px;color:var(--forest);font-size:.7rem;font-weight:800;letter-spacing:.16em;text-transform:uppercase;}
+h1{margin:0;font-size:clamp(1.8rem,4vw,2.6rem);line-height:1.05;}
+.page-heading p{margin:0;color:var(--muted);font-size:.9rem;}
+.workspace{display:grid;grid-template-columns:minmax(320px,.92fr) minmax(0,1.08fr);gap:18px;align-items:start;}
+.column{display:grid;gap:18px;min-width:0;}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow:hidden;}
+.panel-heading{min-height:52px;padding:13px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid var(--line);}
+.panel-heading h2{margin:0;font-size:.9rem;font-weight:800;}
+.panel-heading span{color:var(--muted);font-size:.75rem;}
+.source-body{padding:14px;}
+textarea{display:block;width:100%;resize:vertical;border:1px solid #36524c;border-radius:4px;background:var(--deep);color:#e7fff7;padding:13px;font: .8rem/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2;}
+#pose-input{min-height:215px;}
+button{min-height:40px;border:0;border-radius:4px;padding:0 14px;font:inherit;font-size:.84rem;font-weight:750;cursor:pointer;}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid var(--coral);outline-offset:2px;}
+.primary{background:var(--forest);color:#fff;}
+.secondary{background:#e3eee9;color:var(--forest);}
+.source-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;}
+#status{min-height:1.2em;color:var(--muted);font-size:.78rem;}
+#status[data-error="true"]{color:#b63b2a;}
+.fields-body{padding:14px;}
+.field-section + .field-section{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);}
+.field-section h3{margin:0 0 10px;font-size:.78rem;color:var(--forest);text-transform:uppercase;letter-spacing:.08em;}
+.numeric-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.numeric-row.limb{grid-template-columns:repeat(5,minmax(0,1fr));}
+.numeric-field{display:grid;gap:4px;min-width:0;}
+.numeric-field span{color:var(--muted);font-size:.68rem;font-weight:700;}
+.numeric-field input{width:100%;min-width:0;height:36px;border:1px solid var(--line);border-radius:3px;background:#fbfcfa;padding:0 8px;color:var(--ink);font: .82rem ui-monospace,SFMono-Regular,Menlo,monospace;}
+.limb-fields{display:grid;gap:10px;max-height:360px;overflow:auto;padding-right:4px;}
+.limb-row{padding-bottom:10px;border-bottom:1px solid #edf0ed;}
+.limb-title{display:block;margin-bottom:6px;color:var(--ink);font-size:.76rem;font-weight:750;}
+.preview-body{padding:14px;}
+.preview-tools{display:flex;align-items:center;gap:12px;}
+.zoom-controls{display:flex;align-items:center;gap:5px;}
+.zoom-controls button{min-width:34px;min-height:32px;padding:0 8px;background:#e3eee9;color:var(--forest);}
+.zoom-controls button:disabled{opacity:.4;cursor:default;}
+#zoom-level{min-width:42px;text-align:center;font-variant-numeric:tabular-nums;}
+.canvas-wrap{position:relative;overflow:hidden;border-radius:4px;background:var(--canvas);}
+canvas{display:block;width:100%;height:auto;aspect-ratio:4/3;touch-action:none;cursor:grab;}
+canvas.dragging{cursor:grabbing;}
+.preview-footer{display:flex;justify-content:space-between;gap:10px;padding-top:11px;color:var(--muted);font-size:.75rem;}
+.output-body{padding:14px;}
+#pose-output{min-height:210px;resize:vertical;}
+.output-actions{display:flex;justify-content:flex-end;margin-top:10px;}
+@media(max-width:860px){
+  .workspace{grid-template-columns:1fr;}
+  .page-heading{align-items:start;flex-direction:column;}
+}
+@media(max-width:480px){
+  header{padding:12px 16px;}
+  main{padding:24px 12px 36px;}
+  .numeric-row.limb{gap:5px;}
+  .numeric-field input{padding:0 5px;font-size:.75rem;}
+  .preview-footer{font-size:.68rem;}
+}
+</style>
+</head>
+<body>
+<header>
+  <a class="brand" href="holewall.html"><span class="brand-mark" aria-hidden="true"></span><span>Hole in the Wall</span></a>
+  <a class="back-link" href="holewall.html">Kembali ke game</a>
+</header>
+<main>
+  <div class="page-heading">
+    <div><p class="eyebrow">Pose workshop</p><h1>Editor Pose</h1></div>
+    <p id="pose-count">Belum ada pose dimuat</p>
+  </div>
+  <div class="workspace">
+    <div class="column">
+      <section class="panel" aria-labelledby="source-title">
+        <div class="panel-heading"><h2 id="source-title">Data pose</h2><span>Tempel objek pose</span></div>
+        <div class="source-body">
+          <textarea id="pose-input" spellcheck="false" aria-label="Data pose untuk dimuat"></textarea>
+          <div class="source-actions">
+            <span id="status" role="status" aria-live="polite"></span>
+            <button class="primary" id="load-pose" type="button">Muat pose</button>
+          </div>
+        </div>
+      </section>
+      <section class="panel" aria-labelledby="fields-title">
+        <div class="panel-heading"><h2 id="fields-title">Koordinat dan ukuran</h2><span>Nilai diperbarui langsung</span></div>
+        <div class="fields-body" id="pose-fields"><div class="field-section"><span id="empty-state">Muat data pose untuk mulai mengedit.</span></div></div>
+      </section>
+    </div>
+    <div class="column">
+      <section class="panel" aria-labelledby="preview-title">
+        <div class="panel-heading">
+          <h2 id="preview-title">Preview</h2>
+          <div class="preview-tools">
+            <span id="pose-name">Belum dimuat</span>
+            <div class="zoom-controls" aria-label="Kontrol zoom preview">
+              <button id="zoom-out" type="button" aria-label="Perkecil preview" title="Perkecil preview">−</button>
+              <output id="zoom-level">100%</output>
+              <button id="zoom-in" type="button" aria-label="Perbesar preview" title="Perbesar preview">+</button>
+              <button id="zoom-reset" type="button">Reset</button>
+            </div>
+          </div>
+        </div>
+        <div class="preview-body">
+          <div class="canvas-wrap"><canvas id="pose-canvas" width="800" height="600" aria-label="Preview pose yang dapat diedit dengan drag"></canvas></div>
+          <div class="preview-footer"><span>Tarik titik untuk mengubah koordinat</span><span id="limb-count">0 anggota</span></div>
+        </div>
+      </section>
+      <section class="panel" aria-labelledby="output-title">
+        <div class="panel-heading"><h2 id="output-title">Data untuk disalin</h2><span>Format siap masuk ke POSES</span></div>
+        <div class="output-body">
+          <textarea id="pose-output" readonly spellcheck="false" aria-label="Data pose hasil edit"></textarea>
+          <div class="output-actions"><button class="secondary" id="copy-pose" type="button">Salin data pose</button></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+<script>
+const input = document.getElementById('pose-input');
+const output = document.getElementById('pose-output');
+const canvas = document.getElementById('pose-canvas');
+const ctx = canvas.getContext('2d');
+const fields = document.getElementById('pose-fields');
+const status = document.getElementById('status');
+let pose = null;
+let poseName = 'pose baru';
+let activeDrag = null;
+let view = null;
+let zoom = 1;
+const BASE_SCALE = 2;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3;
+
+input.value = `{ // berdiri menyamping
+  head:{x:5,y:-88,r:25},
+  limbs:[
+    {x1:0,y1:-63,x2:8,y2:15,r:15},
+    {x1:1,y1:-46,x2:-19,y2:-16,r:8},
+    {x1:7,y1:-45,x2:20,y2:-13,r:8},
+    {x1:8,y1:15,x2:-10,y2:58,r:12},
+    {x1:-10,y1:58,x2:-12,y2:99,r:11},
+    {x1:8,y1:15,x2:27,y2:58,r:12},
+    {x1:27,y1:58,x2:23,y2:99,r:11},
+  ]
+},`;
+
+function tokenize(source){
+  const tokens=[];
+  const comments=[];
+  let index=0;
+  while(index<source.length){
+    const char=source[index];
+    if(/\s/.test(char)){ index++; continue; }
+    if(char==='/' && source[index+1]==='/'){
+      const end=source.indexOf('\n',index+2);
+      const stop=end===-1 ? source.length : end;
+      comments.push(source.slice(index+2,stop).trim());
+      index=stop;
+      continue;
+    }
+    if('{}[]:,'.includes(char)){ tokens.push({type:char,value:char}); index++; continue; }
+    const number=source.slice(index).match(/^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/);
+    if(number){
+      const value=Number(number[0]);
+      if(!Number.isFinite(value)) throw new Error(`Angka tidak valid pada posisi ${index+1}.`);
+      tokens.push({type:'number',value});
+      index+=number[0].length;
+      continue;
+    }
+    const identifier=source.slice(index).match(/^[A-Za-z_$][\w$]*/);
+    if(identifier){ tokens.push({type:'identifier',value:identifier[0]}); index+=identifier[0].length; continue; }
+    throw new Error(`Karakter tidak dikenali pada posisi ${index+1}.`);
+  }
+  return {tokens,comments};
+}
+
+function parsePose(source){
+  const {tokens,comments}=tokenize(source);
+  let cursor=0;
+  const peek=()=>tokens[cursor];
+  const take=(type)=>{
+    const token=tokens[cursor];
+    if(!token || token.type!==type) throw new Error(`Data tidak sesuai format; diharapkan "${type}".`);
+    cursor++;
+    return token.value;
+  };
+  const parseNumberObject=(allowedKeys)=>{
+    const record={};
+    take('{');
+    while(peek() && peek().type!=='}'){
+      const key=take('identifier');
+      if(!allowedKeys.includes(key)) throw new Error(`Properti "${key}" tidak dikenal.`);
+      if(Object.hasOwn(record,key)) throw new Error(`Properti "${key}" ditulis lebih dari sekali.`);
+      take(':');
+      record[key]=take('number');
+      if(peek()?.type===','){
+        take(',');
+        if(peek()?.type==='}') break;
+      }else break;
+    }
+    take('}');
+    for(const key of allowedKeys){
+      if(!Object.hasOwn(record,key)) throw new Error(`Properti "${key}" belum diisi.`);
+    }
+    return record;
+  };
+
+  const parsed={};
+  take('{');
+  while(peek() && peek().type!=='}'){
+    const key=take('identifier');
+    if(key!=='head' && key!=='limbs') throw new Error(`Properti "${key}" tidak dikenal.`);
+    if(Object.hasOwn(parsed,key)) throw new Error(`Properti "${key}" ditulis lebih dari sekali.`);
+    take(':');
+    if(key==='head'){
+      parsed.head=parseNumberObject(['x','y','r']);
+    }else{
+      const limbs=[];
+      take('[');
+      while(peek() && peek().type!==']'){
+        if(limbs.length>=40) throw new Error('Maksimal 40 anggota pose.');
+        limbs.push(parseNumberObject(['x1','y1','x2','y2','r']));
+        if(peek()?.type===','){
+          take(',');
+          if(peek()?.type===']') break;
+        }else break;
+      }
+      take(']');
+      if(!limbs.length) throw new Error('Pose harus memiliki minimal satu anggota.');
+      parsed.limbs=limbs;
+    }
+    if(peek()?.type===','){
+      take(',');
+      if(peek()?.type==='}') break;
+    }else break;
+  }
+  take('}');
+  if(peek()?.type===',') take(',');
+  if(cursor!==tokens.length) throw new Error('Ada data tambahan setelah objek pose.');
+  if(!parsed.head || !parsed.limbs) throw new Error('Pose harus memiliki head dan limbs.');
+  if(parsed.head.r<=0 || parsed.limbs.some(limb=>limb.r<=0)) throw new Error('Semua radius harus lebih besar dari 0.');
+  return {pose:parsed,name:comments[0]||'pose baru'};
+}
+
+function numberText(value){
+  const rounded=Math.round(value*10)/10;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+function formatPose(){
+  const name=poseName.replace(/[\r\n]/g,' ').slice(0,60);
+  const head=`    head:{x:${numberText(pose.head.x)},y:${numberText(pose.head.y)},r:${numberText(pose.head.r)}},`;
+  const limbs=pose.limbs.map(limb=>`    {x1:${numberText(limb.x1)},y1:${numberText(limb.y1)},x2:${numberText(limb.x2)},y2:${numberText(limb.y2)},r:${numberText(limb.r)}},`).join('\n');
+  return `{ // ${name}\n${head}\n    limbs:[\n${limbs}\n    ]\n  },`;
+}
+
+function setStatus(message,isError=false){
+  status.textContent=message;
+  status.dataset.error=String(isError);
+}
+
+function makeField(label,key,value,onChange){
+  const wrapper=document.createElement('label');
+  wrapper.className='numeric-field';
+  const caption=document.createElement('span');
+  caption.textContent=label;
+  const control=document.createElement('input');
+  control.type='number';
+  control.step='0.1';
+  control.value=numberText(value);
+  control.setAttribute('aria-label',key);
+  control.addEventListener('input',()=>{
+    const next=Number(control.value);
+    if(!Number.isFinite(next) || (key==='r' && next<=0)) return;
+    onChange(next);
+    refreshPose();
+  });
+  wrapper.append(caption,control);
+  return wrapper;
+}
+
+function buildFields(){
+  fields.replaceChildren();
+  const headSection=document.createElement('section');
+  headSection.className='field-section';
+  const headTitle=document.createElement('h3');
+  headTitle.textContent='Kepala';
+  const headRow=document.createElement('div');
+  headRow.className='numeric-row';
+  for(const key of ['x','y','r']){
+    const label=key==='r'?'radius':key;
+    headRow.append(makeField(label,key,pose.head[key],value=>{pose.head[key]=value;}));
+  }
+  headSection.append(headTitle,headRow);
+  const limbSection=document.createElement('section');
+  limbSection.className='field-section';
+  const limbTitle=document.createElement('h3');
+  limbTitle.textContent='Anggota tubuh';
+  const limbList=document.createElement('div');
+  limbList.className='limb-fields';
+  pose.limbs.forEach((limb,index)=>{
+    const row=document.createElement('div');
+    row.className='limb-row';
+    const title=document.createElement('span');
+    title.className='limb-title';
+    title.textContent=`Anggota ${index+1}`;
+    const controls=document.createElement('div');
+    controls.className='numeric-row limb';
+    for(const key of ['x1','y1','x2','y2','r']){
+      const label=key==='r'?'radius':key;
+      controls.append(makeField(label,`Anggota ${index+1} ${label}`,limb[key],value=>{limb[key]=value;}));
+    }
+    row.append(title,controls);
+    limbList.append(row);
+  });
+  limbSection.append(limbTitle,limbList);
+  fields.append(headSection,limbSection);
+}
+
+function canvasTransform(){
+  return {
+    scale:BASE_SCALE*zoom,
+    cx:canvas.width/2,
+    cy:canvas.height/2,
+  };
+}
+
+function updateZoomControls(){
+  document.getElementById('zoom-level').textContent=`${Math.round(zoom*100)}%`;
+  document.getElementById('zoom-out').disabled=zoom<=MIN_ZOOM;
+  document.getElementById('zoom-in').disabled=zoom>=MAX_ZOOM;
+}
+
+function changeZoom(nextZoom){
+  zoom=Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,Math.round(nextZoom*100)/100));
+  updateZoomControls();
+  drawPose();
+}
+
+function screenPoint(x,y,transform){
+  return {x:transform.cx+x*transform.scale,y:transform.cy+y*transform.scale};
+}
+
+function drawPose(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#10211f';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle='rgba(179,224,207,.09)';
+  ctx.lineWidth=1;
+  for(let x=0;x<=canvas.width;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();}
+  for(let y=0;y<=canvas.height;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(canvas.width,y);ctx.stroke();}
+  if(!pose) return;
+  view=canvasTransform();
+  ctx.save();
+  ctx.translate(view.cx,view.cy);
+  ctx.scale(view.scale,view.scale);
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+  ctx.strokeStyle='#8be0ca';
+  ctx.fillStyle='#8be0ca';
+  for(const limb of pose.limbs){
+    ctx.lineWidth=limb.r*2;
+    ctx.beginPath();
+    ctx.moveTo(limb.x1,limb.y1);
+    ctx.lineTo(limb.x2,limb.y2);
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(pose.head.x,pose.head.y,pose.head.r,0,Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle='#ed7059';
+  for(const limb of pose.limbs){
+    for(const [x,y] of [[limb.x1,limb.y1],[limb.x2,limb.y2]]){
+      const point=screenPoint(x,y,view);
+      ctx.beginPath();ctx.arc(point.x,point.y,5,0,Math.PI*2);ctx.fill();
+    }
+  }
+  const headPoint=screenPoint(pose.head.x,pose.head.y,view);
+  ctx.strokeStyle='#f7fff9';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(headPoint.x,headPoint.y,7,0,Math.PI*2);ctx.stroke();
+  ctx.restore();
+}
+
+function refreshPose(){
+  if(!pose) return;
+  drawPose();
+  output.value=formatPose();
+}
+
+function loadPose(){
+  try{
+    const parsed=parsePose(input.value);
+    pose=parsed.pose;
+    poseName=parsed.name;
+    buildFields();
+    refreshPose();
+    document.getElementById('pose-name').textContent=poseName;
+    document.getElementById('pose-count').textContent=`${pose.limbs.length} anggota tubuh`;
+    document.getElementById('limb-count').textContent=`${pose.limbs.length} anggota`;
+    setStatus('Pose berhasil dimuat.');
+  }catch(error){
+    setStatus(error.message,true);
+  }
+}
+
+function pointerPosition(event){
+  const rect=canvas.getBoundingClientRect();
+  return {x:(event.clientX-rect.left)*canvas.width/rect.width,y:(event.clientY-rect.top)*canvas.height/rect.height};
+}
+
+function distance(a,b){return Math.hypot(a.x-b.x,a.y-b.y);}
+
+canvas.addEventListener('pointerdown',event=>{
+  if(!pose || !view) return;
+  const point=pointerPosition(event);
+  const headPoint=screenPoint(pose.head.x,pose.head.y,view);
+  if(distance(point,headPoint)<18){activeDrag={type:'head'};}
+  else{
+    let nearest=null;
+    pose.limbs.forEach((limb,index)=>{
+      for(const endpoint of ['1','2']){
+        const target=screenPoint(limb[`x${endpoint}`],limb[`y${endpoint}`],view);
+        const d=distance(point,target);
+        if(d<16 && (!nearest || d<nearest.distance)) nearest={type:'limb',index,endpoint,distance:d};
+      }
+    });
+    activeDrag=nearest;
+  }
+  if(activeDrag){canvas.setPointerCapture(event.pointerId);canvas.classList.add('dragging');event.preventDefault();}
+});
+
+canvas.addEventListener('pointermove',event=>{
+  if(!activeDrag || !pose || !view) return;
+  const point=pointerPosition(event);
+  const x=Math.round((point.x-view.cx)/view.scale*10)/10;
+  const y=Math.round((point.y-view.cy)/view.scale*10)/10;
+  if(activeDrag.type==='head'){
+    pose.head.x=x;pose.head.y=y;
+  }else{
+    const limb=pose.limbs[activeDrag.index];
+    limb[`x${activeDrag.endpoint}`]=x;
+    limb[`y${activeDrag.endpoint}`]=y;
+  }
+  buildFields();
+  refreshPose();
+});
+
+function endDrag(){activeDrag=null;canvas.classList.remove('dragging');}
+canvas.addEventListener('pointerup',endDrag);
+canvas.addEventListener('pointercancel',endDrag);
+document.getElementById('zoom-out').addEventListener('click',()=>changeZoom(zoom-0.25));
+document.getElementById('zoom-in').addEventListener('click',()=>changeZoom(zoom+0.25));
+document.getElementById('zoom-reset').addEventListener('click',()=>changeZoom(1));
+document.getElementById('load-pose').addEventListener('click',loadPose);
+document.getElementById('copy-pose').addEventListener('click',async()=>{
+  if(!pose) return;
+  try{
+    await navigator.clipboard.writeText(output.value);
+    setStatus('Data pose berhasil disalin.');
+  }catch{
+    output.focus();output.select();
+    const copied=document.execCommand('copy');
+    setStatus(copied?'Data pose berhasil disalin.':'Salin data dari kolom output.',!copied);
+  }
+});
+
+updateZoomControls();
+loadPose();
+</script>
+</body>
+</html>
