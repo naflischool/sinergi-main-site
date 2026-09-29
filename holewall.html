@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hole in the Wall</title>
+<style>
+:root{
+  --bg:#0b0f1a; --panel:#141a2b; --accent:#5eead4; --accent2:#f472b6;
+  --text:#f1f5f9; --muted:#94a3b8; --wall:#e2e8f0; --success:#34d399; --fail:#f87171;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){ --bg:#0b0f1a; --panel:#141a2b; --text:#f1f5f9; }
+}
+*{box-sizing:border-box;}
+html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
+body{
+  margin:0; height:100%; background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  display:flex; flex-direction:column; align-items:center;
+  padding:12px; overflow-x:hidden;
+}
+h1{font-size:1.3rem; margin:6px 0; letter-spacing:.5px;}
+p{color:var(--muted); font-size:.9rem; max-width:480px; text-align:center; line-height:1.4;}
+.card{
+  background:var(--panel); border-radius:16px; padding:20px;
+  width:100%; max-width:480px; text-align:center;
+  box-shadow:0 10px 30px rgba(0,0,0,.4);
+}
+button{
+  font-size:1rem; padding:12px 20px; border-radius:10px; border:none;
+  background:var(--accent); color:#04231d; font-weight:600; cursor:pointer;
+  margin:6px; transition:transform .1s;
+}
+button:active{transform:scale(.96);}
+button.secondary{background:var(--panel); color:var(--text); border:1px solid var(--muted);}
+button.pink{background:var(--accent2); color:#2a0a1a;}
+.modes{display:flex; justify-content:center; gap:10px; flex-wrap:wrap;}
+#stage{
+  position:relative; width:100%; max-width:900px; aspect-ratio:4/3;
+  background:#000; border-radius:16px; overflow:hidden; display:none;
+}
+video{position:absolute; width:100%; height:100%; object-fit:cover; transform:scaleX(-1); opacity:0;}
+canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
+#hud{
+  position:absolute; top:8px; left:0; right:0; display:flex; justify-content:space-between;
+  padding:0 12px; font-weight:700; font-size:.95rem; text-shadow:0 1px 4px rgba(0,0,0,.8);
+  pointer-events:none;
+}
+#countdown{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:4rem; font-weight:800; color:#fff; text-shadow:0 2px 10px rgba(0,0,0,.7);
+  pointer-events:none;
+}
+#result-banner{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:1.8rem; font-weight:800; text-shadow:0 2px 10px rgba(0,0,0,.7); pointer-events:none;
+}
+.hidden{display:none !important;}
+#end-screen ul{list-style:none; padding:0; text-align:left; font-size:1.05rem;}
+#controls-bar{
+  width:100%; max-width:900px; display:none; align-items:center; gap:10px;
+  padding:6px 10px; font-size:.8rem; color:var(--muted);
+}
+#controls-bar input[type=range]{flex:1; accent-color:var(--accent2);}
+#btn-recalib{
+  font-size:.75rem; padding:6px 10px; margin:0; background:var(--panel);
+  color:var(--text); border:1px solid var(--muted); pointer-events:auto;
+}
+.score-popup{
+  position:absolute; font-weight:900; font-size:2.2rem; pointer-events:none;
+  text-shadow:0 2px 10px rgba(0,0,0,.7); z-index:25; white-space:nowrap;
+  animation: popScore 1.4s ease-out forwards, hueShift 1.4s linear forwards;
+}
+@keyframes popScore{
+  0%{transform:translate(-50%,-50%) scale(.3); opacity:0;}
+  22%{transform:translate(-50%,-65%) scale(1.5); opacity:1;}
+  50%{transform:translate(-50%,-75%) scale(1.15); opacity:1;}
+  100%{transform:translate(-50%,-140%) scale(1); opacity:0;}
+}
+@keyframes hueShift{
+  0%{filter:hue-rotate(0deg) brightness(1.3) saturate(1.4);}
+  100%{filter:hue-rotate(150deg) brightness(1.3) saturate(1.4);}
+}
+</style>
+</head>
+<body>
+
+<h1>🕳️ Hole in the Wall</h1>
+
+<div class="card" id="start-screen">
+  <p>Bentuk tubuhmu agar pas masuk ke lubang sebelum "dinding" datang! Pilih mode pemain, lalu kalibrasi kamera di ruangan kosong (tanpa orang) sebelum mulai.</p>
+  <div class="modes">
+    <button id="mode1" class="secondary">👤 1 Pemain</button>
+    <button id="mode2" class="secondary">👥 2 Pemain</button>
+  </div>
+  <p id="mode-label" style="color:var(--accent); font-weight:600;"></p>
+  <p style="font-size:.8rem;">🟦 Area biru muda = bagian tubuhmu yang terdeteksi kamera (bayangan). Lubang berbentuk siluet orang dengan berbagai pose — posisikan bayanganmu supaya pas masuk!</p>
+  <button id="btn-calib" disabled>📷 Aktifkan Kamera</button>
+</div>
+
+<div class="card hidden" id="calib-screen">
+  <p><b>Kalibrasi:</b> Pastikan tidak ada orang di depan kamera sekarang, lalu tekan tombol di bawah.</p>
+  <button id="btn-do-calib">Kalibrasi Latar Belakang</button>
+  <p id="calib-status"></p>
+</div>
+
+<div id="controls-bar">
+  <button id="btn-recalib">🔄 Kalibrasi Ulang</button>
+  <span>🌙 Gelap</span>
+  <input type="range" id="darkness" min="0" max="90" value="45">
+</div>
+
+<div id="stage">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="hud"></div>
+  <div id="countdown"></div>
+  <div id="result-banner"></div>
+</div>
+
+<div class="card hidden" id="end-screen">
+  <h2>🏁 Selesai!</h2>
+  <ul id="final-scores"></ul>
+  <button id="btn-restart">Main Lagi</button>
+</div>
+
+<script>
+const startScreen = document.getElementById('start-screen');
+const calibScreen = document.getElementById('calib-screen');
+const stage = document.getElementById('stage');
+const endScreen = document.getElementById('end-screen');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+const countdownEl = document.getElementById('countdown');
+const resultBanner = document.getElementById('result-banner');
+
+let mode = 1;
+let W = 640, H = 480;
+const SCALE_DOWN = 4;
+let PW = W/SCALE_DOWN, PH = H/SCALE_DOWN; // low-res processing size
+let bgGraySmall = null;
+let offCanvas = document.createElement('canvas'); // full-res mirrored capture
+let offCtx = offCanvas.getContext('2d');
+let offCanvasSmall = document.createElement('canvas'); // low-res mirrored capture
+let offCtxSmall = offCanvasSmall.getContext('2d');
+let round = 0;
+const MAX_ROUNDS = 6;
+let score = {1:0, 2:0};
+let stream = null;
+let raf = null;
+let phase = 'idle'; // idle, countdown, closing, result
+let wallAlpha = 0;
+let phaseStart = 0;
+let holes = {}; // per player: {pose, cx, cy, scale}
+let curFg = null; // latest low-res foreground mask
+let darkness = 45; // 0-90, dikontrol slider
+let isRecalibrating = false;
+let savedPhaseBeforeRecalib = null;
+const controlsBar = document.getElementById('controls-bar');
+
+document.getElementById('mode1').onclick = () => setMode(1);
+document.getElementById('mode2').onclick = () => setMode(2);
+document.getElementById('btn-calib').onclick = initCamera;
+document.getElementById('btn-do-calib').onclick = calibrate;
+document.getElementById('btn-restart').onclick = () => location.reload();
+document.getElementById('btn-recalib').onclick = requestRecalibration;
+document.getElementById('darkness').addEventListener('input', e => {
+  darkness = parseInt(e.target.value, 10);
+});
+
+function setMode(m){
+  mode = m;
+  document.getElementById('mode1').style.background = m===1 ? 'var(--accent)':'';
+  document.getElementById('mode2').style.background = m===2 ? 'var(--accent)':'';
+  document.getElementById('mode-label').textContent = m===1 ? 'Mode: 1 Pemain' : 'Mode: 2 Pemain (berdiri sisi kiri & kanan)';
+  document.getElementById('btn-calib').disabled = false;
+}
+
+async function initCamera(){
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({video:{width:640,height:480}, audio:false});
+    video.srcObject = stream;
+    await video.play();
+    canvas.width = W; canvas.height = H;
+    offCanvas.width = W; offCanvas.height = H;
+    offCanvasSmall.width = PW; offCanvasSmall.height = PH;
+    startScreen.classList.add('hidden');
+    calibScreen.classList.remove('hidden');
+  }catch(e){
+    alert('Tidak bisa mengakses kamera. Pastikan izin kamera diaktifkan di browser, lalu coba lagi.\n('+e.message+')');
+  }
+}
+
+// captures a MIRRORED low-res grayscale frame (so it matches what's shown on screen)
+function grabGraySmall(){
+  offCtxSmall.save();
+  offCtxSmall.scale(-1,1); offCtxSmall.translate(-PW,0);
+  offCtxSmall.drawImage(video,0,0,PW,PH);
+  offCtxSmall.restore();
+  const data = offCtxSmall.getImageData(0,0,PW,PH).data;
+  const gray = new Uint8ClampedArray(PW*PH);
+  for(let i=0,p=0;i<data.length;i+=4,p++){
+    gray[p] = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
+  }
+  return gray;
+}
+
+// Dipanggil saat pemain menekan "Kalibrasi Ulang" di tengah permainan.
+// WAJIB menghentikan game loop & menyembunyikan stage dulu, supaya wall/pose
+// tidak terus tergambar/dihitung di belakang layar kalibrasi (bug lama).
+function requestRecalibration(){
+  isRecalibrating = true;
+  savedPhaseBeforeRecalib = { round, score: {...score} };
+  cancelAnimationFrame(raf);
+  raf = null;
+  phase = 'idle';
+  countdownEl.textContent = '';
+  resultBanner.textContent = '';
+  stage.style.display = 'none';
+  controlsBar.style.display = 'none';
+  document.getElementById('calib-status').textContent = '';
+  calibScreen.classList.remove('hidden');
+}
+
+function calibrate(){
+  // Ambil data latar HANYA dari video mentah (tidak terpengaruh gambar wall/pose
+  // di canvas, karena canvas sudah tidak digambar selama layar kalibrasi tampil).
+  const fresh = grabGraySmall();
+  if(!fresh || fresh.length !== PW*PH){
+    document.getElementById('calib-status').textContent = '❌ Gagal membaca kamera, coba lagi.';
+    return; // jangan simpan data yang salah/kosong
+  }
+  bgGraySmall = fresh;
+  document.getElementById('calib-status').textContent = '✅ Kalibrasi berhasil!';
+  setTimeout(()=>{
+    calibScreen.classList.add('hidden');
+    stage.style.display = 'block';
+    controlsBar.style.display = 'flex';
+    if(isRecalibrating){
+      // lanjutkan permainan dari ronde yang sama, skor tetap tersimpan
+      isRecalibrating = false;
+      round = savedPhaseBeforeRecalib.round;
+      score = savedPhaseBeforeRecalib.score;
+      round--; // nextRound() akan menaikkan lagi
+      nextRound();
+      raf = requestAnimationFrame(loop);
+    } else {
+      startGame();
+    }
+  }, 600);
+}
+
+function computeForegroundSmall(){
+  const gray = grabGraySmall();
+  const fg = new Uint8Array(PW*PH);
+  for(let i=0;i<gray.length;i++){
+    fg[i] = Math.abs(gray[i]-bgGraySmall[i]) > 38 ? 1 : 0;
+  }
+  return fg;
+}
+
+// ---- human silhouette poses (local coords, y-down, origin ~ torso center) ----
+// each pose: head circle + limbs as capsules (line segment + radius)
+const POSES = [
+  { // bintang / star jump
+    head:{x:0,y:-88,r:16},
+    limbs:[
+      {x1:0,y1:-72,x2:0,y2:12,r:18},     // torso
+      {x1:0,y1:-60,x2:-62,y2:-95,r:11},  // lengan kiri
+      {x1:0,y1:-60,x2:62,y2:-95,r:11},   // lengan kanan
+      {x1:0,y1:12,x2:-55,y2:92,r:14},    // kaki kiri
+      {x1:0,y1:12,x2:55,y2:92,r:14},     // kaki kanan
+    ]
+  },
+  { // huruf T
+    head:{x:0,y:-88,r:16},
+    limbs:[
+      {x1:0,y1:-72,x2:0,y2:18,r:18},
+      {x1:0,y1:-58,x2:-75,y2:-58,r:10},
+      {x1:0,y1:-58,x2:75,y2:-58,r:10},
+      {x1:0,y1:18,x2:-28,y2:98,r:14},
+      {x1:0,y1:18,x2:28,y2:98,r:14},
+    ]
+  },
+  { // satu lengan naik, tendangan
+    head:{x:6,y:-88,r:16},
+    limbs:[
+      {x1:0,y1:-72,x2:6,y2:14,r:17},
+      {x1:0,y1:-58,x2:-58,y2:-98,r:10},
+      {x1:6,y1:-52,x2:48,y2:-15,r:10},
+      {x1:0,y1:14,x2:-58,y2:52,r:14},
+      {x1:6,y1:14,x2:20,y2:98,r:14},
+    ]
+  },
+  { // kaki-tangan lebar, gaya victory
+    head:{x:0,y:-90,r:16},
+    limbs:[
+      {x1:0,y1:-74,x2:0,y2:10,r:18},
+      {x1:0,y1:-60,x2:-48,y2:-105,r:11},
+      {x1:0,y1:-60,x2:48,y2:-105,r:11},
+      {x1:0,y1:10,x2:-62,y2:88,r:15},
+      {x1:0,y1:10,x2:62,y2:88,r:15},
+    ]
+  },
+];
+const POSE_HALF_W = 80, POSE_HALF_H = 112; // approx bounding half-extents at scale=1
+
+function distToSeg(px,py,x1,y1,x2,y2){
+  const dx=x2-x1, dy=y2-y1;
+  const len2 = dx*dx+dy*dy;
+  let t = len2 ? ((px-x1)*dx+(py-y1)*dy)/len2 : 0;
+  t = Math.max(0,Math.min(1,t));
+  const cx=x1+t*dx, cy=y1+t*dy;
+  return Math.hypot(px-cx,py-cy);
+}
+
+function isInsideHole(x,y,h){
+  const lx=(x-h.cx)/h.scale, ly=(y-h.cy)/h.scale;
+  const hd=h.pose.head;
+  if(Math.hypot(lx-hd.x,ly-hd.y) <= hd.r) return true;
+  for(const l of h.pose.limbs){
+    if(distToSeg(lx,ly,l.x1,l.y1,l.x2,l.y2) <= l.r) return true;
+  }
+  return false;
+}
+
+function drawHolePath(c, h){
+  c.save();
+  c.translate(h.cx,h.cy);
+  c.scale(h.scale,h.scale);
+  c.lineCap='round';
+  for(const l of h.pose.limbs){
+    c.lineWidth = l.r*2;
+    c.beginPath();
+    c.moveTo(l.x1,l.y1); c.lineTo(l.x2,l.y2);
+    c.stroke();
+  }
+  const hd = h.pose.head;
+  c.beginPath();
+  c.arc(hd.x,hd.y,hd.r,0,Math.PI*2);
+  c.fill();
+  c.restore();
+}
+
+function newHole(zoneX0, zoneX1, targetHeightPx){
+  const pose = POSES[Math.floor(Math.random()*POSES.length)];
+  let scale = targetHeightPx/(POSE_HALF_H*2);
+  const maxScaleX = ((zoneX1-zoneX0)-30) / (POSE_HALF_W*2);
+  const maxScaleY = (H-30) / (POSE_HALF_H*2);
+  scale = Math.min(scale, maxScaleX, maxScaleY);
+  scale = Math.max(scale, 0.45);
+  const mX = POSE_HALF_W*scale+15, mY = POSE_HALF_H*scale+15;
+  const cx = (zoneX1-zoneX0 > mX*2) ? zoneX0+mX+Math.random()*((zoneX1-zoneX0)-mX*2) : (zoneX0+zoneX1)/2;
+  const cy = (H > mY*2) ? mY+Math.random()*(H-mY*2) : H/2;
+  return {pose, cx, cy, scale};
+}
+
+function startGame(){
+  round = 0;
+  score = {1:0,2:0};
+  controlsBar.style.display = 'flex';
+  nextRound();
+  raf = requestAnimationFrame(loop);
+}
+
+function nextRound(){
+  round++;
+  if(round > MAX_ROUNDS){ endGame(); return; }
+  const targetH = Math.max(170, 320 - round*22);
+  if(mode===1){
+    holes = {1: newHole(0, W, targetH)};
+  } else {
+    holes = {1: newHole(0, W/2, targetH*0.85), 2: newHole(W/2, W, targetH*0.85)};
+  }
+  phase = 'countdown';
+  phaseStart = performance.now();
+  resultBanner.textContent = '';
+}
+
+function drawZoneDivider(){
+  if(mode===2){
+    ctx.strokeStyle = 'rgba(255,255,255,.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(W/2,0); ctx.lineTo(W/2,H); ctx.stroke();
+  }
+}
+
+// Skor 0-100: seberapa PENUH lubang terisi bayangan (fillScore) dikurangi
+// seberapa banyak bayangan "bocor" ke area dinding solid (penalty).
+function computeRoundScore(fg, x0, x1, hole){
+  let solidTotal=0, solidHit=0, holeTotal=0, holeHit=0;
+  const step = 6;
+  for(let y=10;y<H-10;y+=step){
+    for(let x=x0+10;x<x1-10;x+=step){
+      const inHole = isInsideHole(x,y,hole);
+      const sx = Math.min(PW-1, Math.max(0, Math.floor(x/SCALE_DOWN)));
+      const sy = Math.min(PH-1, Math.max(0, Math.floor(y/SCALE_DOWN)));
+      const fgVal = fg[sy*PW + sx];
+      if(inHole){ holeTotal++; if(fgVal) holeHit++; }
+      else { solidTotal++; if(fgVal) solidHit++; }
+    }
+  }
+  const solidRatio = solidTotal ? solidHit/solidTotal : 0;
+  const holeRatio = holeTotal ? holeHit/holeTotal : 0;
+  const fillScore = Math.min(1, holeRatio/0.7) * 100;
+  const penalty = Math.min(100, solidRatio*280);
+  return Math.round(Math.max(0, Math.min(100, fillScore - penalty)));
+}
+
+function tierColor(s){
+  if(s>=85) return '#facc15'; // gold
+  if(s>=60) return '#34d399'; // hijau
+  if(s>=35) return '#fb923c'; // oranye
+  return '#f87171'; // merah
+}
+
+function showScorePopup(cx, cy, s){
+  const el = document.createElement('div');
+  el.className = 'score-popup';
+  el.textContent = `+${s}pt`;
+  el.style.left = (cx/W*100) + '%';
+  el.style.top = (cy/H*100) + '%';
+  el.style.color = tierColor(s);
+  stage.appendChild(el);
+  setTimeout(() => el.remove(), 1500);
+}
+
+// Bayangan tubuh = HIJAU, area target lubang = MAGENTA, supaya mudah dibedakan.
+function drawShadowOverlay(fg){
+  ctx.save();
+  ctx.fillStyle = 'rgba(74,222,128,.5)';
+  for(let sy=0; sy<PH; sy++){
+    for(let sx=0; sx<PW; sx++){
+      if(fg[sy*PW+sx]){
+        ctx.fillRect(sx*SCALE_DOWN, sy*SCALE_DOWN, SCALE_DOWN, SCALE_DOWN);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function loop(ts){
+  raf = requestAnimationFrame(loop);
+  ctx.save();
+  ctx.scale(-1,1); ctx.translate(-W,0);
+  ctx.drawImage(video,0,0,W,H);
+  ctx.restore();
+
+  // gelapkan gambar kamera sesuai slider, agar overlay hijau/magenta lebih kontras
+  if(darkness > 0){
+    ctx.fillStyle = `rgba(0,0,0,${darkness/100})`;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  curFg = computeForegroundSmall();
+  drawShadowOverlay(curFg);
+
+  const t = performance.now() - phaseStart;
+
+  if(phase==='countdown'){
+    const n = 3 - Math.floor(t/700);
+    countdownEl.textContent = n>0 ? n : 'MULAI!';
+    if(t > 2200){ phase='closing'; phaseStart=performance.now(); countdownEl.textContent=''; }
+  } else {
+    countdownEl.textContent='';
+  }
+
+  if(phase==='closing' || phase==='result'){
+    const dur = 3500;
+    wallAlpha = phase==='closing' ? Math.min(1, t/dur) : 1;
+    const zones = mode===1 ? [[0,W,holes[1]]] : [[0,W/2,holes[1]],[W/2,W,holes[2]]];
+    for(const [x0,x1,h] of zones){
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x0,0,x1-x0,H); ctx.clip();
+      ctx.fillStyle = `rgba(226,232,240,${0.15+0.65*wallAlpha})`;
+      ctx.fillRect(x0,0,x1-x0,H);
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle='rgba(0,0,0,1)'; ctx.strokeStyle='rgba(0,0,0,1)';
+      drawHolePath(ctx,h); ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+      // tint area lubang dengan magenta agar berbeda jelas dari bayangan hijau
+      ctx.fillStyle = 'rgba(244,114,182,1)'; ctx.strokeStyle = 'rgba(244,114,182,1)';
+      drawHolePath(ctx,h); ctx.fill();
+      ctx.restore();
+    }
+    drawZoneDivider();
+
+    if(phase==='closing' && t >= dur){
+      if(mode===1){
+        const s1 = computeRoundScore(curFg,0,W,holes[1]);
+        score[1] += s1;
+        showScorePopup(holes[1].cx, holes[1].cy, s1);
+      } else {
+        const s1 = computeRoundScore(curFg,0,W/2,holes[1]);
+        const s2 = computeRoundScore(curFg,W/2,W,holes[2]);
+        score[1] += s1; score[2] += s2;
+        showScorePopup(holes[1].cx, holes[1].cy, s1);
+        showScorePopup(holes[2].cx, holes[2].cy, s2);
+      }
+      phase = 'result'; phaseStart = performance.now();
+    }
+    if(phase==='result' && t >= 1600){
+      nextRound();
+    }
+  }
+
+  hud.innerHTML = mode===1
+    ? `<span>Ronde ${Math.min(round,MAX_ROUNDS)}/${MAX_ROUNDS}</span><span>Skor: ${score[1]}</span>`
+    : `<span>P1: ${score[1]}  |  Ronde ${Math.min(round,MAX_ROUNDS)}/${MAX_ROUNDS}</span><span>P2: ${score[2]}</span>`;
+}
+
+function endGame(){
+  cancelAnimationFrame(raf);
+  if(stream) stream.getTracks().forEach(tr=>tr.stop());
+  stage.style.display='none';
+  controlsBar.style.display='none';
+  endScreen.classList.remove('hidden');
+  const list = document.getElementById('final-scores');
+  const maxTotal = MAX_ROUNDS*100;
+  if(mode===1){
+    const avg = Math.round(score[1]/MAX_ROUNDS);
+    list.innerHTML = `<li>Total skor: <b>${score[1]}</b> / ${maxTotal}</li><li>Rata-rata per ronde: <b>${avg}</b>/100</li>`;
+  } else {
+    const winner = score[1]===score[2] ? 'Seri!' : (score[1]>score[2] ? 'Pemain 1 Menang! 🏆' : 'Pemain 2 Menang! 🏆');
+    list.innerHTML = `<li>Pemain 1: <b>${score[1]}</b> / ${maxTotal}</li><li>Pemain 2: <b>${score[2]}</b> / ${maxTotal}</li><li style="color:var(--accent); font-weight:700;">${winner}</li>`;
+  }
+}
+</script>
+</body>
+</html>
