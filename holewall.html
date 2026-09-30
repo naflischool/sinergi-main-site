@@ -40,6 +40,11 @@ button.secondary{background:var(--panel); color:var(--text); border:1px solid va
 button.pink{background:var(--accent2); color:#2a0a1a;}
 .modes{display:flex; justify-content:center; gap:10px; flex-wrap:wrap;}
 .modes button[aria-pressed="true"]{background:var(--accent); color:#04231d; border-color:var(--accent);}
+.online-panel{display:grid;gap:10px;margin:14px 0;padding:12px;border:1px solid rgba(94,234,212,.3);border-radius:10px;text-align:left;}
+.online-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.online-actions input{flex:1 1 180px;min-width:0;padding:10px;border:1px solid var(--muted);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;}
+.room-code{font:700 1rem ui-monospace,monospace;color:var(--accent);overflow-wrap:anywhere;}
+#online-status{margin:0;text-align:left;font-size:.82rem;}
 .settings{display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin:16px 0;}
 .settings label{display:flex; align-items:center; gap:8px; color:var(--text); font-size:.9rem;}
 .settings select{font:inherit; padding:8px 10px; border:1px solid var(--muted); border-radius:8px; background:var(--bg); color:var(--text);}
@@ -119,8 +124,20 @@ canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
   <div class="modes">
     <button id="mode1" class="secondary" type="button" aria-pressed="true">👤 1 Pemain</button>
     <button id="mode2" class="secondary" type="button" aria-pressed="false">👥 2 Pemain</button>
+    <button id="mode-online" class="secondary" type="button" aria-pressed="false">🌐 Online</button>
   </div>
   <p id="mode-label" style="color:var(--accent); font-weight:600;"></p>
+  <div class="online-panel hidden" id="online-panel">
+    <div class="online-actions">
+      <button id="btn-create-room" type="button">Buat room</button>
+      <span class="room-code" id="room-code"></span>
+    </div>
+    <div class="online-actions">
+      <input id="join-room-code" type="text" autocomplete="off" placeholder="Kode room pemain 1" aria-label="Kode room pemain 1">
+      <button id="btn-join-room" type="button">Gabung</button>
+    </div>
+    <p id="online-status" role="status" aria-live="polite">Buat room di perangkat pertama, lalu gabung dari perangkat kedua.</p>
+  </div>
   <div class="settings">
     <label for="round-count">Jumlah ronde
       <select id="round-count">
@@ -195,6 +212,15 @@ const countdownEl = document.getElementById('countdown');
 const resultBanner = document.getElementById('result-banner');
 
 let mode = 1;
+let onlinePeer = null;
+let onlineConnection = null;
+let onlineIsHost = false;
+let onlinePlayerId = 1;
+let onlineScriptPromise = null;
+let onlineLocalReady = false;
+let onlineRemoteReady = false;
+let onlineMatchStarted = false;
+let onlineRoundScores = {};
 let W = 640, H = 480;
 const SCALE_DOWN = 4;
 let PW = W/SCALE_DOWN, PH = H/SCALE_DOWN; // low-res processing size
@@ -225,6 +251,9 @@ const controlsBar = document.getElementById('controls-bar');
 
 document.getElementById('mode1').onclick = () => setMode(1);
 document.getElementById('mode2').onclick = () => setMode(2);
+document.getElementById('mode-online').onclick = () => setMode(3);
+document.getElementById('btn-create-room').onclick = createOnlineRoom;
+document.getElementById('btn-join-room').onclick = joinOnlineRoom;
 document.getElementById('btn-calib').onclick = initCamera;
 document.getElementById('btn-do-calib').onclick = calibrate;
 document.getElementById('btn-restart').onclick = () => location.reload();
@@ -266,14 +295,169 @@ document.getElementById('darkness').addEventListener('input', e => {
 });
 
 function setMode(m){
+  if(mode===3 && m!==3) closeOnlineConnection();
   mode = m;
   document.getElementById('mode1').setAttribute('aria-pressed', String(m===1));
   document.getElementById('mode2').setAttribute('aria-pressed', String(m===2));
-  document.getElementById('mode-label').textContent = m===1 ? 'Mode: 1 Pemain' : 'Mode: 2 Pemain (berdiri sisi kiri & kanan)';
-  document.getElementById('btn-calib').disabled = false;
+  document.getElementById('mode-online').setAttribute('aria-pressed', String(m===3));
+  document.getElementById('mode-label').textContent = m===1 ? 'Mode: 1 Pemain' : (m===2 ? 'Mode: 2 Pemain (berdiri sisi kiri & kanan)' : 'Mode: Online, satu perangkat untuk setiap pemain');
+  document.getElementById('online-panel').classList.toggle('hidden',m!==3);
+  document.getElementById('btn-calib').disabled = m===3 ? !onlineConnection : false;
+  if(m===3) loadPeerJS().catch(()=>{});
 }
 
 setMode(1);
+
+function setOnlineStatus(message,isError=false){
+  const status=document.getElementById('online-status');
+  status.textContent=message;
+  status.style.color=isError?'var(--fail)':'var(--muted)';
+}
+
+function loadPeerJS(){
+  if(window.Peer) return Promise.resolve();
+  if(onlineScriptPromise) return onlineScriptPromise;
+  onlineScriptPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');
+    script.src='https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js';
+    script.onload=resolve;
+    script.onerror=()=>reject(new Error('Library koneksi online tidak dapat dimuat.'));
+    document.head.appendChild(script);
+  }).catch(error=>{
+    setOnlineStatus(`${error.message} Periksa koneksi internet.`,true);
+    onlineScriptPromise=null;
+    throw error;
+  });
+  return onlineScriptPromise;
+}
+
+function updateOnlineConnection(connection){
+  onlineConnection=connection;
+  connection.on('open',()=>{
+    onlineLocalReady=false;
+    onlineRemoteReady=false;
+    onlineMatchStarted=false;
+    document.getElementById('btn-calib').disabled=false;
+    setOnlineStatus(`Terhubung sebagai Pemain ${onlinePlayerId}. Aktifkan kamera untuk lanjut.`);
+    sendOnlineMessage({type:'hello',player:onlinePlayerId});
+  });
+  connection.on('data',handleOnlineMessage);
+  connection.on('close',()=>{
+    onlineConnection=null;
+    document.getElementById('btn-calib').disabled=true;
+    setOnlineStatus('Koneksi terputus. Buat room atau gabung kembali.',true);
+  });
+  connection.on('error',error=>setOnlineStatus(`Koneksi gagal: ${error.message}`,true));
+}
+
+async function createOnlineRoom(){
+  try{
+    await loadPeerJS();
+    closeOnlineConnection();
+    onlineIsHost=true;
+    onlinePlayerId=1;
+    document.getElementById('btn-create-room').disabled=true;
+    onlinePeer=new Peer();
+    onlinePeer.on('open',id=>{
+      document.getElementById('room-code').textContent=`Kode room: ${id}`;
+      setOnlineStatus('Room siap. Masukkan kode ini di perangkat pemain 2.');
+    });
+    onlinePeer.on('connection',connection=>{
+      if(onlineConnection){connection.close();return;}
+      onlinePlayerId=1;
+      updateOnlineConnection(connection);
+    });
+    onlinePeer.on('error',error=>{
+      document.getElementById('btn-create-room').disabled=false;
+      setOnlineStatus(`Room gagal dibuat: ${error.message}`,true);
+    });
+  }catch(error){
+    setOnlineStatus(error.message,true);
+  }
+}
+
+async function joinOnlineRoom(){
+  const roomCode=document.getElementById('join-room-code').value.trim();
+  if(!roomCode){setOnlineStatus('Masukkan kode room pemain 1.',true);return;}
+  try{
+    await loadPeerJS();
+    closeOnlineConnection();
+    onlineIsHost=false;
+    onlinePlayerId=2;
+    document.getElementById('btn-join-room').disabled=true;
+    onlinePeer=new Peer();
+    onlinePeer.on('open',()=>{
+      const connection=onlinePeer.connect(roomCode,{reliable:true});
+      updateOnlineConnection(connection);
+      connection.on('open',()=>{document.getElementById('btn-join-room').disabled=false;});
+    });
+    onlinePeer.on('error',error=>{
+      document.getElementById('btn-join-room').disabled=false;
+      setOnlineStatus(`Tidak dapat bergabung: ${error.message}`,true);
+    });
+  }catch(error){
+    document.getElementById('btn-join-room').disabled=false;
+    setOnlineStatus(error.message,true);
+  }
+}
+
+function closeOnlineConnection(){
+  if(onlineConnection){onlineConnection.close();onlineConnection=null;}
+  if(onlinePeer){onlinePeer.destroy();onlinePeer=null;}
+  document.getElementById('btn-create-room').disabled=false;
+  document.getElementById('btn-join-room').disabled=false;
+  document.getElementById('btn-calib').disabled=mode===3;
+}
+
+function sendOnlineMessage(message){
+  if(onlineConnection?.open) onlineConnection.send(message);
+}
+
+function handleOnlineMessage(message){
+  if(!message || mode!==3) return;
+  if(message.type==='hello'){
+    onlineRemoteReady=false;
+    setOnlineStatus(`Terhubung dengan Pemain ${message.player}. Kalibrasikan kamera lalu tekan Mulai.`);
+  }else if(message.type==='ready'){
+    onlineRemoteReady=true;
+    setOnlineStatus('Pemain lain siap. Menunggu kedua pemain menekan Mulai.');
+    if(onlineIsHost && onlineLocalReady) beginOnlineHostMatch();
+  }else if(message.type==='match-start' && !onlineIsHost){
+    maxRounds=message.maxRounds;
+    countdownSeconds=message.countdownSeconds;
+    onlineMatchStarted=true;
+    setOnlineStatus('Pertandingan dimulai.');
+  }else if(message.type==='round' && !onlineIsHost){
+    round=message.round;
+    maxRounds=message.maxRounds;
+    countdownSeconds=message.countdownSeconds;
+    holes={[onlinePlayerId]:message.hole};
+    onlineRoundScores={};
+    phase='countdown';
+    phaseStart=performance.now();
+    resultBanner.textContent='';
+  }else if(message.type==='round-score' && message.round===round){
+    score[message.player]=message.total;
+    onlineRoundScores[message.player]=message.points;
+    if(onlineIsHost && phase==='waiting' && onlineRoundScores[1]!==undefined && onlineRoundScores[2]!==undefined){
+      nextRound();
+    }
+  }else if(message.type==='match-end'){
+    score=message.score;
+    endGame();
+  }
+}
+
+function beginOnlineHostMatch(){
+  if(onlineMatchStarted || !onlineLocalReady || !onlineRemoteReady) return;
+  onlineMatchStarted=true;
+  sendOnlineMessage({type:'match-start',maxRounds,countdownSeconds});
+  round=0;
+  score={1:0,2:0};
+  onlineRoundScores={};
+  nextRound();
+  if(!raf) raf=requestAnimationFrame(loop);
+}
 
 async function initCamera(){
   try{
@@ -568,6 +752,15 @@ function newHole(zoneX0, zoneX1, targetHeightPx){
 
 function startGame(){
   document.getElementById('setup-bar').style.display = 'none';
+  if(mode===3){
+    onlineLocalReady=true;
+    phase='waiting';
+    controlsBar.style.display='flex';
+    setOnlineStatus('Siap. Menunggu pemain lain menekan Mulai.');
+    sendOnlineMessage({type:'ready'});
+    if(onlineIsHost && onlineRemoteReady) beginOnlineHostMatch();
+    return;
+  }
   round = 0;
   score = {1:0,2:0};
   controlsBar.style.display = 'flex';
@@ -577,19 +770,27 @@ function startGame(){
 
 function nextRound(){
   round++;
-  if(round > maxRounds){ endGame(); return; }
+  if(round > maxRounds){
+    if(mode===3 && onlineIsHost) sendOnlineMessage({type:'match-end',score});
+    endGame();
+    return;
+  }
   const targetH = Math.max(170, 320 - round*22);
   holes = createRoundHoles(targetH);
+  onlineRoundScores={};
   phase = 'countdown';
   phaseStart = performance.now();
   resultBanner.textContent = '';
+  if(mode===3 && onlineIsHost){
+    sendOnlineMessage({type:'round',round,maxRounds,countdownSeconds,hole:holes[1]});
+  }
 }
 
 function createRoundHoles(targetHeight,useLockedSetup=lockYAndScale){
-  const zones=mode===1 ? [[1,0,W]] : [[1,0,W/2],[2,W/2,W]];
+  const zones=mode===2 ? [[1,0,W/2],[2,W/2,W]] : [[mode===3 ? onlinePlayerId : 1,0,W]];
   if(!useLockedSetup){
     return Object.fromEntries(zones.map(([player,x0,x1])=>[
-      player,newHole(x0,x1,mode===1 ? targetHeight : targetHeight*0.85)
+      player,newHole(x0,x1,mode===2 ? targetHeight*0.85 : targetHeight)
     ]));
   }
   return Object.fromEntries(zones.map(([player,x0,x1])=>{
@@ -616,8 +817,8 @@ function updateSetupHoles(){
   if(phase!=='setup') return;
   const entries=Object.entries(previewBaseHoles);
   const yLimits=entries.map(([player,baseHole])=>{
-    const zoneX0=mode===1 ? 0 : (Number(player)-1)*W/2;
-    const zoneX1=mode===1 ? W : Number(player)*W/2;
+    const zoneX0=mode===2 ? (Number(player)-1)*W/2 : 0;
+    const zoneX1=mode===2 ? Number(player)*W/2 : W;
     const bounds=getPoseBounds(baseHole.pose);
     const scale=Math.min(baseHole.scale*setupScale,(zoneX1-zoneX0-30)/bounds.width,(H-30)/bounds.height);
     return {
@@ -629,8 +830,8 @@ function updateSetupHoles(){
   const maxY=Math.min(...yLimits.map(limit=>limit.max));
   const sharedY=Math.max(minY,Math.min(maxY,setupY));
   for(const [player,baseHole] of entries){
-    const zoneX0=mode===1 ? 0 : (Number(player)-1)*W/2;
-    const zoneX1=mode===1 ? W : Number(player)*W/2;
+    const zoneX0=mode===2 ? (Number(player)-1)*W/2 : 0;
+    const zoneX1=mode===2 ? Number(player)*W/2 : W;
     const bounds=getPoseBounds(baseHole.pose);
     const scale=Math.min(baseHole.scale*setupScale,(zoneX1-zoneX0-30)/bounds.width,(H-30)/bounds.height);
     const minX=zoneX0+15-bounds.minX*scale;
@@ -760,7 +961,7 @@ function loop(ts){
   if(phase==='countdown'){
     const n = countdownSeconds - Math.floor(t/1000);
     countdownEl.textContent = n>0 ? n : 'MULAI!';
-    const targetHoles = mode===1 ? [holes[1]] : [holes[1], holes[2]];
+    const targetHoles = mode===2 ? [holes[1], holes[2]] : [holes[onlinePlayerId] || holes[1]];
     ctx.fillStyle = 'rgba(244,114,182,1)';
     ctx.strokeStyle = 'rgba(244,114,182,1)';
     for(const hole of targetHoles){
@@ -780,7 +981,9 @@ function loop(ts){
   if(phase==='closing' || phase==='result'){
     const dur = 300;
     wallAlpha = phase==='closing' ? Math.min(1, t/dur) : 1;
-    const zones = mode===1 ? [[0,W,holes[1]]] : [[0,W/2,holes[1]],[W/2,W,holes[2]]];
+    const zones = mode===2
+      ? [[0,W/2,holes[1]],[W/2,W,holes[2]]]
+      : [[0,W,holes[mode===3 ? onlinePlayerId : 1]]];
     for(const [x0,x1,h] of zones){
       ctx.save();
       ctx.beginPath(); ctx.rect(x0,0,x1-x0,H); ctx.clip();
@@ -802,24 +1005,40 @@ function loop(ts){
         const s1 = computeRoundScore(curFg,0,W,holes[1]);
         score[1] += s1;
         showScorePopup(holes[1].cx, holes[1].cy, s1);
-      } else {
+      } else if(mode===2){
         const s1 = computeRoundScore(curFg,0,W/2,holes[1]);
         const s2 = computeRoundScore(curFg,W/2,W,holes[2]);
         score[1] += s1; score[2] += s2;
         showScorePopup(holes[1].cx, holes[1].cy, s1);
         showScorePopup(holes[2].cx, holes[2].cy, s2);
+      } else {
+        const player=onlinePlayerId;
+        const points=computeRoundScore(curFg,0,W,holes[player]);
+        score[player]+=points;
+        onlineRoundScores[player]=points;
+        showScorePopup(holes[player].cx,holes[player].cy,points);
+        sendOnlineMessage({type:'round-score',round,player,points,total:score[player]});
       }
       phase = 'result'; phaseStart = performance.now();
       t = 0;
     }
     if(phase==='result' && t >= 1600){
-      nextRound();
+      if(mode===3){
+        phase='waiting';
+        if(onlineIsHost && onlineRoundScores[1]!==undefined && onlineRoundScores[2]!==undefined){
+          nextRound();
+        }
+      }else{
+        nextRound();
+      }
     }
   }
 
   hud.innerHTML = mode===1
     ? `<span>Ronde ${Math.min(round,maxRounds)}/${maxRounds}</span><span>Skor: ${score[1]}</span>`
-    : `<span>P1: ${score[1]}  |  Ronde ${Math.min(round,maxRounds)}/${maxRounds}</span><span>P2: ${score[2]}</span>`;
+    : mode===2
+      ? `<span>P1: ${score[1]}  |  Ronde ${Math.min(round,maxRounds)}/${maxRounds}</span><span>P2: ${score[2]}</span>`
+      : `<span>Pemain ${onlinePlayerId}  |  Ronde ${Math.min(round,maxRounds)}/${maxRounds}</span><span>P1: ${score[1]} · P2: ${score[2]}</span>`;
 }
 
 function endGame(){
