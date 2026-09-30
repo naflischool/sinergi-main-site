@@ -162,7 +162,7 @@ canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
   <label for="setup-scale">Skala <input id="setup-scale" type="range" min="0.6" max="1.4" step="0.05" value="1"><output id="scale-value">100%</output></label>
   <div id="setup-position-settings" hidden>
     <label for="setup-x">Posisi X <input id="setup-x" type="range" min="-100" max="100" step="5" value="0"><output id="x-value">0</output></label>
-    <label for="setup-y">Posisi Y <input id="setup-y" type="range" min="-100" max="100" step="5" value="0"><output id="y-value">0</output></label>
+    <label for="setup-y">Posisi Y <input id="setup-y" type="range" min="-200" max="200" step="5" value="0"><output id="y-value">0</output></label>
   </div>
   <button id="btn-start" type="button">Mulai</button>
 </div>
@@ -356,6 +356,9 @@ function calibrate(){
       document.getElementById('scale-value').value = '100%';
       phase = 'setup';
       holes = createRoundHoles(240,false);
+      if(mode===2){
+        for(const hole of Object.values(holes)) hole.cy=H/2;
+      }
       previewBaseHoles = Object.fromEntries(Object.entries(holes).map(([player,hole])=>[player,{...hole}]));
       updateSetupHoles();
       controlsBar.style.display = 'none';
@@ -611,18 +614,30 @@ function createRoundHoles(targetHeight,useLockedSetup=lockYAndScale){
 
 function updateSetupHoles(){
   if(phase!=='setup') return;
-  for(const [player,baseHole] of Object.entries(previewBaseHoles)){
+  const entries=Object.entries(previewBaseHoles);
+  const yLimits=entries.map(([player,baseHole])=>{
+    const zoneX0=mode===1 ? 0 : (Number(player)-1)*W/2;
+    const zoneX1=mode===1 ? W : Number(player)*W/2;
+    const bounds=getPoseBounds(baseHole.pose);
+    const scale=Math.min(baseHole.scale*setupScale,(zoneX1-zoneX0-30)/bounds.width,(H-30)/bounds.height);
+    return {
+      min:15-bounds.minY*scale-baseHole.cy,
+      max:H-15-bounds.maxY*scale-baseHole.cy,
+    };
+  });
+  const minY=Math.max(...yLimits.map(limit=>limit.min));
+  const maxY=Math.min(...yLimits.map(limit=>limit.max));
+  const sharedY=Math.max(minY,Math.min(maxY,setupY));
+  for(const [player,baseHole] of entries){
     const zoneX0=mode===1 ? 0 : (Number(player)-1)*W/2;
     const zoneX1=mode===1 ? W : Number(player)*W/2;
     const bounds=getPoseBounds(baseHole.pose);
     const scale=Math.min(baseHole.scale*setupScale,(zoneX1-zoneX0-30)/bounds.width,(H-30)/bounds.height);
     const minX=zoneX0+15-bounds.minX*scale;
     const maxX=zoneX1-15-bounds.maxX*scale;
-    const minY=15-bounds.minY*scale;
-    const maxY=H-15-bounds.maxY*scale;
     holes[player]={...baseHole,scale,
       cx:Math.max(minX,Math.min(maxX,baseHole.cx+setupX)),
-      cy:Math.max(minY,Math.min(maxY,baseHole.cy+setupY))};
+      cy:baseHole.cy+sharedY};
   }
 }
 
