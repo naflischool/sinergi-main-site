@@ -96,8 +96,11 @@ canvas{position:absolute; top:0; left:0; width:100%; height:100%;}
   padding:0; margin:0; border:1px solid rgba(255,255,255,.7); border-radius:50%;
   background:rgba(11,15,26,.78); color:#fff; font-size:1.25rem;
 }
-#stage:fullscreen{width:min(100vw,133.333dvh);height:min(100dvh,75vw);max-width:none;aspect-ratio:4/3;margin:auto;border-radius:0;}
-#stage:-webkit-full-screen{width:min(100vw,133.333vh);height:min(100vh,75vw);max-width:none;aspect-ratio:4/3;margin:auto;border-radius:0;}
+#stage:fullscreen,#stage:-webkit-full-screen,#stage.fullscreen-fallback{
+  position:fixed; inset:0; width:min(100vw,133.333dvh); height:min(100dvh,75vw);
+  max-width:none; aspect-ratio:4/3; margin:auto; border-radius:0; z-index:1000;
+}
+html.fullscreen-fallback,html.fullscreen-fallback body{background:#000;}
 .score-popup{
   position:absolute; font-weight:900; font-size:2.2rem; pointer-events:none;
   text-shadow:0 2px 10px rgba(0,0,0,.7); z-index:25; white-space:nowrap;
@@ -474,11 +477,27 @@ async function initCamera(){
   }
 }
 
+function drawCameraFrame(context,width,height){
+  const sourceWidth=video.videoWidth||width;
+  const sourceHeight=video.videoHeight||height;
+  const targetAspect=width/height;
+  const sourceAspect=sourceWidth/sourceHeight;
+  let sx=0,sy=0,sw=sourceWidth,sh=sourceHeight;
+  if(sourceAspect>targetAspect){
+    sw=sourceHeight*targetAspect;
+    sx=(sourceWidth-sw)/2;
+  }else if(sourceAspect<targetAspect){
+    sh=sourceWidth/targetAspect;
+    sy=(sourceHeight-sh)/2;
+  }
+  context.drawImage(video,sx,sy,sw,sh,0,0,width,height);
+}
+
 // captures a MIRRORED low-res grayscale frame (so it matches what's shown on screen)
 function grabGraySmall(){
   offCtxSmall.save();
   offCtxSmall.scale(-1,1); offCtxSmall.translate(-PW,0);
-  offCtxSmall.drawImage(video,0,0,PW,PH);
+  drawCameraFrame(offCtxSmall,PW,PH);
   offCtxSmall.restore();
   const data = offCtxSmall.getImageData(0,0,PW,PH).data;
   const gray = new Uint8ClampedArray(PW*PH);
@@ -842,7 +861,13 @@ function updateSetupHoles(){
   }
 }
 
-function isFullscreen(){return Boolean(document.fullscreenElement||document.webkitFullscreenElement);}
+function isFullscreen(){return Boolean(document.fullscreenElement||document.webkitFullscreenElement||stage.classList.contains('fullscreen-fallback'));}
+
+function setFullscreenFallback(active){
+  stage.classList.toggle('fullscreen-fallback',active);
+  document.documentElement.classList.toggle('fullscreen-fallback',active);
+  updateFullscreenButton();
+}
 
 function updateFullscreenButton(){
   const button=document.getElementById('btn-fullscreen');
@@ -854,15 +879,20 @@ function updateFullscreenButton(){
 async function toggleFullscreen(){
   try{
     if(isFullscreen()){
-      if(document.exitFullscreen) await document.exitFullscreen();
-      else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+      if(document.fullscreenElement&&document.exitFullscreen) await document.exitFullscreen();
+      else if(document.webkitFullscreenElement&&document.webkitExitFullscreen) document.webkitExitFullscreen();
+      else setFullscreenFallback(false);
     }else if(stage.requestFullscreen){
-      await stage.requestFullscreen();
+      try{await stage.requestFullscreen();}
+      catch(error){setFullscreenFallback(true);}
     }else if(stage.webkitRequestFullscreen){
-      stage.webkitRequestFullscreen();
+      try{stage.webkitRequestFullscreen();}
+      catch(error){setFullscreenFallback(true);}
+    }else{
+      setFullscreenFallback(true);
     }
   }catch(error){
-    alert('Layar penuh tidak tersedia di browser ini.');
+    setFullscreenFallback(true);
   }
 }
 
@@ -932,7 +962,7 @@ function loop(ts){
   raf = requestAnimationFrame(loop);
   ctx.save();
   ctx.scale(-1,1); ctx.translate(-W,0);
-  ctx.drawImage(video,0,0,W,H);
+  drawCameraFrame(ctx,W,H);
   ctx.restore();
 
   // gelapkan gambar kamera sesuai slider, agar overlay hijau/magenta lebih kontras
